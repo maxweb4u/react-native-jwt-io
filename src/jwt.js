@@ -15,25 +15,30 @@ var jwt = module.exports;
  * @param {Object} payload
  * @param {String} key
  * @param {String} algorithm default 'HS256'
- * @param {String} pass default none
  * @return {String} token
  * @api public
  */
-jwt.encode = function jwt_encode( payload, key, algorithm, pass ) {
+jwt.encode = function jwt_encode( payload, key, algorithm ) {
     algorithm = typeof algorithm !== 'undefined' ? algorithm : 'HS256';
-    pass = typeof pass !== 'undefined' ? pass : '';
-    return rs.jws.JWS.sign(algorithm, JSON.stringify({ alg: algorithm, typ: 'JWT' }), JSON.stringify(payload), key, pass);
+    return rs.jws.JWS.sign(algorithm, JSON.stringify({ alg: algorithm, typ: 'JWT' }), JSON.stringify(payload), key);
 }
 
 /**
  * Parse JWT token
  *
  * @param {String} token
+ * @param {String} key
  * @return {Object} payload
  * @api public
  */
-jwt.decode = function jwt_parseToken( token ) {
-    return rs.jws.JWS.parseJWS(token);
+jwt.decode = function jwt_parseToken( token, key ) {
+    var isValid = rs.jws.JWS.verify(token, key);
+    if (isValid){
+        return rs.jws.JWS.parseJWS;
+    } else {
+        return null;
+    }
+
 }
 
 /**
@@ -44,6 +49,6 @@ jwt.decode = function jwt_parseToken( token ) {
  * @return {Boolean} true if the signature is valid otherwise false
  * @api public
  */
-jwt.verify = function jwt_verifyToken( token, pass ) {
-    return rs.jws.JWS.verify(token, pass);
+jwt.verify = function jwt_verifyToken( token, key ) {
+    return rs.jws.JWS.verify(token, key);
 }

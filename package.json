@@ -1,6 +1,6 @@
 {
   "name": "react-native-jwt-io",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "This package generates JWT tokens using jsrsasign library.",
   "main": "index.js",
   "scripts": {
