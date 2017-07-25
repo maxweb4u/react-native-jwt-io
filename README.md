@@ -2,9 +2,12 @@
 This package generates JWT tokens using jsrsasign library.
 
 
-## installation
+## Installation
 
 npm install react-native-jwt-io --save
 
-## how to use
+## How to use
 
+## License
+
+MIT
