@@ -1,1 +1,1 @@
-module.exports = require('./src/jwtio');
+module.exports = require('./src/jwt');

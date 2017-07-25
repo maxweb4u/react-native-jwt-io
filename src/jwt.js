@@ -7,7 +7,7 @@ var rs = require('jsrsasign');
 /**
  * expose object
  */
-var jwtio = module.exports;
+var jwt = module.exports;
 
 /**
  * Encode JWT
@@ -19,7 +19,7 @@ var jwtio = module.exports;
  * @return {String} token
  * @api public
  */
-jwtio.encode = function jwtio_encode( payload, key, algorithm, pass ) {
+jwt.encode = function jwt_encode( payload, key, algorithm, pass ) {
     algorithm = typeof algorithm !== 'undefined' ? algorithm : 'HS256';
     pass = typeof pass !== 'undefined' ? pass : '';
     return rs.jws.JWS.sign(algorithm, JSON.stringify({ alg: algorithm, typ: 'JWT' }), JSON.stringify(payload), key, pass);
@@ -32,7 +32,7 @@ jwtio.encode = function jwtio_encode( payload, key, algorithm, pass ) {
  * @return {Object} payload
  * @api public
  */
-jwtio.decode = function jwtio_parseToken( token ) {
+jwt.decode = function jwt_parseToken( token ) {
     return rs.jws.JWS.parseJWS(token);
 }
 
@@ -44,6 +44,6 @@ jwtio.decode = function jwtio_parseToken( token ) {
  * @return {Boolean} true if the signature is valid otherwise false
  * @api public
  */
-jwtio.verify = function jwtio_verifyToken( token, pass ) {
+jwt.verify = function jwt_verifyToken( token, pass ) {
     return rs.jws.JWS.verify(token, pass);
 }

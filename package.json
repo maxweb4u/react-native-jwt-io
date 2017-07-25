@@ -1,6 +1,6 @@
 {
   "name": "react-native-jwt-io",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "This package generates JWT tokens using jsrsasign library.",
   "main": "index.js",
   "scripts": {
@@ -18,7 +18,7 @@
     "auth"
   ],
   "author": "Max Gornostayev",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/maxweb4u/react-native-jwt-io/issues"
   },
