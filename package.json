@@ -24,6 +24,6 @@
   },
   "homepage": "https://github.com/maxweb4u/react-native-jwt-io#readme",
   "dependencies": {
-    "jsrsasign": "^8.0.1"
+    "jsrsasign": "^8.0.12"
   }
 }

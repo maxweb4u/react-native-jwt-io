@@ -34,7 +34,7 @@ jwt.encode = function jwt_encode( payload, key, algorithm ) {
 jwt.decode = function jwt_parseToken( token, key ) {
     var isValid = rs.jws.JWS.verify(token, key);
     if (isValid){
-        return rs.jws.JWS.parseJWS;
+        return rs.jws.JWS.parse(token);
     } else {
         return null;
     }
