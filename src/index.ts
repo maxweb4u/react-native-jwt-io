@@ -3,6 +3,9 @@
 import './host/hostCheck';
 import { legacyDefaultExport } from './jwt/legacy';
 
+// 1.x tombstones by name, for require() and Node ESM default imports.
+export { decode, encode } from './jwt/legacy';
+
 export { sign } from './jwt/sign';
 export { verify } from './jwt/verify';
 export { decodeUnverified } from './jwt/decodeUnverified';
@@ -34,5 +37,5 @@ export {
   JwtSignatureError,
 } from './errors/errors';
 
-/** @deprecated The 1.x API. Every member throws `JwtMigrationError`. Removed in 3.0. */
+/** @deprecated The 1.x API. Every member throws `JwtMigrationError`. Removed in 3.0, with the named `encode` and `decode`. */
 export default legacyDefaultExport;

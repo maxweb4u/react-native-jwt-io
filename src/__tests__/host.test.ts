@@ -4,7 +4,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import jwt, { importPEM, JwtError, JwtMigrationError, sign } from '../index';
+import jwt, { decode, encode, importPEM, JwtError, JwtMigrationError, sign } from '../index';
 import { nodeKeyPair, pem } from './helpers/node';
 
 describe('host requirements (SC-17)', () => {
@@ -85,6 +85,16 @@ describe('1.x tombstones (SC-15)', () => {
   it.each(['encode', 'decode', 'verify'] as const)('jwt.%s throws a migration error naming the replacement', (name) => {
     expect(() => (jwt[name] as () => unknown)()).toThrow(JwtMigrationError);
     expect(() => (jwt[name] as () => unknown)()).toThrow(/2\.0/);
+  });
+
+  it.each([
+    ['encode', encode, /sign\(payload, key, options\)/],
+    ['decode', decode, /verify\(token, key\)/],
+  ] as const)('the named %s throws the same migration error (for require and Node ESM)', (_name, fn, replacement) => {
+    expect(() => fn({ id: 1 }, 'secret')).toThrow(JwtMigrationError);
+    expect(() => fn({ id: 1 }, 'secret')).toThrow(replacement);
+    expect(jwt.encode).toBe(encode);
+    expect(jwt.decode).toBe(decode);
   });
 
   it('errors are JwtError subclasses with instanceof intact', () => {

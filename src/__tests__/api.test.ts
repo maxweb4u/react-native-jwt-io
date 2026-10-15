@@ -43,8 +43,10 @@ it('exports exactly the documented surface', () => {
       'JwtNotBeforeError',
       'JwtSignatureError',
       'createJWKS',
+      'decode',
       'decodeUnverified',
       'default',
+      'encode',
       'getExpiration',
       'hexToBytes',
       'importJWK',
@@ -54,5 +56,6 @@ it('exports exactly the documented surface', () => {
       'verify',
     ].sort(),
   );
-  expect('decode' in api).toBe(false);
+  // `decode` exists only as a tombstone: it throws, it never decodes.
+  expect(() => api.decode()).toThrow(api.JwtMigrationError);
 });
