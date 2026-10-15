@@ -32,6 +32,35 @@ What stands between the built code (stages 1–6, 2026-10-15) and the release.
 | W-5 | ~~README, migration guide, CHANGELOG~~ — done 2026-10-15; the README's examples run as `src/__tests__/readme.test.ts`. What remains of stage 8 is the release itself. |
 | W-6 | **Hot paths.** On a mid-range phone ES256 verification takes 60 ms, ES384/ES512 148/319 ms, RSA signing 0.8 s, all on the JS thread; try noble's per-key `Point.precompute` before anything native. Not a release blocker. |
 
+## Review of 2026-10-15
+
+An independent review of `src/` (a separate agent, adversarial, read-only) found no way to get a forged or unsigned token accepted, no algorithm confusion, and no key-binding bypass. It did find the defects below. Each fix has a regression test in `src/__tests__/review.test.ts`, numbered like this table.
+
+| # | Finding | Severity | Outcome |
+|-|-|-|-|
+| 1 | `now: new Date('x')` made every time comparison false: an expired token verified, `isExpired` said false, `sign` wrote `"exp":null` | medium, fail-open | `now` must be a valid Date, else `JwtClaimError` |
+| 2 | A string `clockTolerance` such as `'9…9s'` parsed to Infinity and disabled `exp` | low, fail-open | durations must be finite |
+| 3 | `now` was floored to the second: a fractional `exp` lived up to a second too long; a fresh fractional `iat` read as "issued in the future" | low | compared exactly |
+| 4 | With a JWKS, `options.algorithm` was ignored | low | it constrains key sets too |
+| 5 | Two keys with the same `kid` and `alg`: the first was used | low | ambiguity is `JwtKeyNotFoundError` |
+| 6 | Even RSA moduli, `d` out of range, and private keys mixed from two keys were accepted; a bad `d` made signing throw a plain `Error` | low | checked at import (primes when present); signing failures become `JwtKeyError` |
+| 7 | `importPEM(…, { kid: 5 })` was accepted | low | `kid` must be a string |
+| 8 | `null` options, `audience: null`, `hexToBytes('zz')` threw plain `TypeError`s | low | treated as no options / `JwtError`s |
+| 9 | Registered claims and header fields were typed but not checked (`sub` could be an object) | low | enforced on read and write |
+| 10 | A `toJSON` on the header or payload could change what was signed (even `alg`) | nit | validated as serialized |
+| 11 | DER: trailing nodes, non-minimal lengths and integers, unchecked algorithm parameters, multi-byte first OID arc | nit | strict |
+| 12 | JWK `key_ops` ignored | nit | honoured |
+| 13 | A key with the RSASSA-PSS OID could be bound to RS256 | nit | PS* only |
+| 14 | ECDSA signatures are malleable (high-S accepted on purpose) | nit | documented in [domain/algorithms.md](domain/algorithms.md) and the README |
+| 15 | `header`/`payload` and the exported constants were not frozen | nit | frozen |
+| 16 | `expiresIn: 1e300` produced `exp: 1e300` | nit | computed times are checked too |
+
+Not changed: PEM text without its BEGIN/END lines, or a JWK passed as a JSON string, still reads as an HMAC secret — indistinguishable from a secret without guessing. A PEM inside a `Uint8Array` is now refused.
+
+### Open: 1.x tombstones under `require` and Node ESM
+
+Found while re-checking the packed tarball: the tombstones live on the default export only, so `require('react-native-jwt-io').encode` and a Node ESM default import get `undefined` and fail with `jwt.encode is not a function` instead of `JwtMigrationError`. Metro and bundlers are fine. Decide: add named `encode`/`decode` tombstones (ADR-004 forbids an unverified `decode`, not a throwing one), or accept the gap. Details: [_inbox/cjs-default-export-tombstones.md](_inbox/cjs-default-export-tombstones.md).
+
 ## Decided
 
 | ID | Decision | Outcome | Record |

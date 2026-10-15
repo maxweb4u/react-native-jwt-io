@@ -154,19 +154,24 @@ of the library in one bundle, where `instanceof` does not.
 
 | Class | `code` | When |
 |-|-|-|
-| `JwtMalformedError` | `ERR_JWT_MALFORMED` | Not three base64url segments of JSON objects; `crit`; JWE |
+| `JwtMalformedError` | `ERR_JWT_MALFORMED` | Not three base64url segments of JSON objects; longer than 65,536 characters; `crit`; JWE |
 | `JwtAlgorithmError` | `ERR_JWT_ALGORITHM` | `alg` is `none`, unsupported, or not the key's algorithm |
 | `JwtSignatureError` | `ERR_JWT_SIGNATURE_INVALID` | The signature does not verify |
 | `JwtExpiredError` | `ERR_JWT_EXPIRED` | `exp` passed, or older than `maxTokenAge`; has `expiredAt` |
 | `JwtNotBeforeError` | `ERR_JWT_NOT_BEFORE` | `nbf` in the future; has `notBefore` |
-| `JwtClaimError` | `ERR_JWT_CLAIM_INVALID` | A claim is wrong or missing; has `claim` |
+| `JwtClaimError` | `ERR_JWT_CLAIM_INVALID` | A claim is wrong, missing, or of the wrong type, or an option such as `now` is malformed; has `claim` |
 | `JwtKeyError` | `ERR_JWT_KEY_INVALID` | A key cannot be imported or used — including a PEM passed as a string |
 | `JwtKeyNotFoundError` | `ERR_JWT_KEY_NOT_FOUND` | No key in the JWKS for the token's `kid`; has `kid` |
 | `JwtHostRequirementError` | `ERR_JWT_HOST_REQUIREMENT` | The engine lacks a feature; has `feature` |
 | `JwtMigrationError` | `ERR_JWT_MIGRATION` | A 1.x function was called |
 
-Checks run in this order and stop at the first failure: shape, algorithm,
-signature, then claims — so claims are never evaluated for an unsigned token.
+Checks run in this order and stop at the first failure: shape (including the
+types of the registered claims), algorithm, signature, then claim values — so
+claim values are never evaluated for an unsigned token.
+
+ECDSA signatures are malleable: every ES* token has a second valid encoding of
+its signature, and both verify. Do not deduplicate or revoke ES* tokens by their
+string or hash; use a `jti`.
 
 ## Performance
 

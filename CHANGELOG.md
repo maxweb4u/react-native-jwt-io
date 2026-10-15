@@ -52,8 +52,17 @@ A rewrite in TypeScript with a new, synchronous API. Breaking: see
 - Base64url is decoded strictly (no padding, no foreign characters, zero
   trailing bits); `__proto__` keys are dropped from decoded JSON; unknown
   `crit` extensions are refused; RSA keys below 2048 bits are refused.
+- Registered claims (`iss`, `sub`, `jti`, `aud`, `exp`, `nbf`, `iat`) and the
+  header's `typ`, `cty`, `kid` are type-checked on read and write; `sign`
+  checks the header and payload as serialized, so `toJSON` cannot rewrite them.
+- An invalid `now` or a non-finite `clockTolerance` is an error, never a
+  silently disabled time check; time claims are compared exactly.
+- RSA keys are checked at import (odd modulus, `d` in range, primes consistent
+  when present); DER is parsed strictly; JWK `key_ops` and the RSASSA-PSS key
+  OID are honoured.
 - Tested against Node's `crypto` for every algorithm in both directions, the
-  Wycheproof vectors (1717 cases), and 2000 corrupted DER keys.
+  Wycheproof vectors (1717 cases), 2000 corrupted DER keys, and one regression
+  per finding of an independent review.
 
 ## [1.0.4] — 2026-10-15
 

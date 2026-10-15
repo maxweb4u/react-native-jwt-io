@@ -53,7 +53,7 @@ importPEM(pem, algorithm, { kid? }): JwtKey
 importJWK(jwk, algorithm?): JwtKey
 createJWKS(jwks, { algorithm? }): JwtKeySet
 hexToBytes(hex): Uint8Array
-Algorithm, JwtErrorCode, JwtError and its eleven subclasses
+Algorithm, JwtErrorCode, JwtError and its ten subclasses
 
 default export: { encode, decode, verify } — migration tombstones that throw JwtMigrationError; removed in 3.0.0
 ```

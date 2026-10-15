@@ -18,11 +18,13 @@ canonical_for:
 |-|-|
 | `string` | HMAC secret as UTF-8. Never parsed as hex, never parsed as PEM. Algorithm `HS256` unless the `algorithm` option names `HS384` or `HS512` |
 | `Uint8Array` | Raw HMAC secret bytes, same algorithm rule. Also the migration path for 1.0.x secrets that were read as hex |
-| PEM via `importPEM(pem, algorithm)` | SPKI public key or PKCS#8 private key; PKCS#1 `RSA PRIVATE KEY` accepted for migration from 1.0.x. `algorithm` is required |
-| JWK object via `importJWK(jwk, algorithm?)` | Public or private; `use` is honoured; algorithm per [Binding](#binding) |
+| PEM via `importPEM(pem, algorithm, { kid? })` | `PUBLIC KEY` (SPKI), `PRIVATE KEY` (PKCS#8 v1 or v2), `RSA PUBLIC KEY` / `RSA PRIVATE KEY` (PKCS#1), `EC PRIVATE KEY` (SEC1). `algorithm` is required. A key whose OID is id-RSASSA-PSS binds to PS* only |
+| JWK object via `importJWK(jwk, algorithm?)` | Public or private; `use` must be `sig` and `key_ops`, if present, must include `sign` or `verify`; algorithm per [Binding](#binding) |
 | JWKS object via `createJWKS()` | Key chosen by the token's `kid`, then filtered by `alg` |
 
-A PEM is never accepted as a bare string. The bare-string path means "HMAC secret", and keeping the two apart is what closes algorithm confusion structurally rather than by a runtime check.
+Checked at import: RSA moduli are odd and at least 2048 bits, `1 < d < n`, and when the primes are present (PKCS#1, PKCS#8, and JWKs that carry `p` and `q`) they must produce `n`, `e` and `d`. A private key whose parts were mixed from two keys is refused instead of signing tokens nobody can verify. EC and Ed25519 private keys are checked against their public parts the same way.
+
+A PEM is never accepted as a bare string — nor as PEM text in a `Uint8Array`. The bare-string path means "HMAC secret", and keeping the two apart is what closes algorithm confusion structurally rather than by a runtime check.
 
 ## Binding
 
