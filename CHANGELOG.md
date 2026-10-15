@@ -41,8 +41,10 @@ A rewrite in TypeScript with a new, synchronous API. Breaking: see
 
 ### Removed
 
-- The 1.x default export. Its `encode`, `decode` and `verify` now throw
-  `JwtMigrationError` naming the replacement; they are removed in 3.0.
+- The 1.x API. `encode`, `decode` (exported by name and on the default export)
+  and the default export's `verify` now throw `JwtMigrationError` naming the
+  replacement, however the package is loaded — `import`, `require()`, or a
+  Node ESM default import. They are removed in 3.0.
 - `jsrsasign`.
 
 ### Security

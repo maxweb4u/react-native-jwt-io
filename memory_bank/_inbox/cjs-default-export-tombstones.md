@@ -23,4 +23,4 @@ It does not work in two other places:
 
 `jwt.verify(token, key)` from 1.x code in those two places reaches the real 2.x named `verify`, which returns an object or throws — loud, not silent.
 
-Not decided yet: whether to add named `encode`/`decode` tombstones (ADR-004 says "no `decode` export", meant as "no unverified `decode`"), or to accept the gap since React Native consumers go through Metro.
+Decided the same day: named `encode` and `decode` tombstones were added — [ADR-006](../adr/ADR-006-named-1x-tombstones.md), superseding ADR-004.

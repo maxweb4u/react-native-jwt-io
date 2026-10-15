@@ -6,12 +6,15 @@ derived_from:
   - ../product/context.md
   - ADR-002-synchronous-api.md
   - ADR-003-one-key-one-algorithm.md
-status: active
-decision_status: accepted
+status: archived
+decision_status: superseded
+superseded_by: ADR-006-named-1x-tombstones.md
 date: 2026-10-15
 ---
 
 # ADR-004 — Break from the 1.0.x API
+
+> **Superseded by [ADR-006](ADR-006-named-1x-tombstones.md)** on 2026-10-15: the 1.x tombstones are also exported by name, so `require()` and Node ESM default imports see them. Everything else here stands and is restated there.
 
 ## Context
 

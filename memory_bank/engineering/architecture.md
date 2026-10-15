@@ -55,10 +55,10 @@ createJWKS(jwks, { algorithm? }): JwtKeySet
 hexToBytes(hex): Uint8Array
 Algorithm, JwtErrorCode, JwtError and its ten subclasses
 
-default export: { encode, decode, verify } — migration tombstones that throw JwtMigrationError; removed in 3.0.0
+encode, decode, and the default export { encode, decode, verify } — 1.x tombstones that throw JwtMigrationError; removed in 3.0.0
 ```
 
-Every function is synchronous and throws a named error on failure ([ADR-002](../adr/ADR-002-synchronous-api.md)); none returns a promise, which `src/__tests__/api.test.ts` asserts along with the exact export list. `algorithm` applies only to a bare secret (default `HS256`); an imported key carries its own ([ADR-003](../adr/ADR-003-one-key-one-algorithm.md)). Names, the absence of `decode`, the tombstones and `allowShortSecret` are [ADR-004](../adr/ADR-004-break-from-v1-api.md).
+Every function is synchronous and throws a named error on failure ([ADR-002](../adr/ADR-002-synchronous-api.md)); none returns a promise, which `src/__tests__/api.test.ts` asserts along with the exact export list. `algorithm` applies only to a bare secret (default `HS256`); an imported key carries its own ([ADR-003](../adr/ADR-003-one-key-one-algorithm.md)). Names, `decode` existing only as a tombstone, the tombstones and `allowShortSecret` are [ADR-006](../adr/ADR-006-named-1x-tombstones.md).
 
 Everything exported from `src/index.ts` is a published contract. Adding to it is a minor release; changing or removing from it is a major one.
 

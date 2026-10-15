@@ -38,7 +38,7 @@ Out of scope:
 | SC-1 | A token signed with each supported `alg` verifies in Node's `crypto`, and a Node-signed token verifies here | interop suite |
 | SC-2 | A key is bound to exactly one algorithm: `importPEM` without one is a type error and throws at runtime; an RSA or `oct` JWK with no `alg` and no argument is rejected on import; a bare secret defaults to HS256 | unit + type test |
 | SC-14 | No export of the core returns a promise | type test over the public barrel |
-| SC-15 | The default export's `encode`, `decode`, and `verify` each throw `JwtMigrationError` naming the replacement | unit |
+| SC-15 | The default export's `encode`, `decode`, and `verify`, and the named `encode` and `decode`, each throw `JwtMigrationError` naming the replacement — also through `require()` and a Node ESM default import | unit; `scripts/check-build.cjs` |
 | SC-16 | An HMAC secret shorter than the hash output is rejected by `sign` and `verify`, and accepted with `allowShortSecret: true` | unit |
 | SC-17 | With `BigInt` or `Object.hasOwn` removed from the global scope, the first call throws `JwtHostRequirementError` naming the missing feature | unit, deleting the global as `react-native-matrix`'s `hostSupport.test.ts` does |
 | SC-18 | The README's React Native floor is the lowest version on which the `example/` self-test passes every algorithm | manual: stage 1a measurement |
@@ -64,8 +64,8 @@ Out of scope:
 
 ## Public API impact
 
-Breaking, per [ADR-004](../../adr/ADR-004-break-from-v1-api.md): the 1.0.x default export becomes migration tombstones that throw; `decode` has no successor of the same name; short HMAC secrets are refused by default; string secrets are always UTF-8.
+Breaking, per [ADR-006](../../adr/ADR-006-named-1x-tombstones.md): the 1.0.x API becomes migration tombstones that throw — on the default export and as the named `encode` and `decode`; `decode` has no successor of the same name; short HMAC secrets are refused by default; string secrets are always UTF-8.
 
 ## Notes
 
-Settled: crypto backend ([ADR-001](../../adr/ADR-001-crypto-backend.md)), synchronous API ([ADR-002](../../adr/ADR-002-synchronous-api.md)), one key one algorithm ([ADR-003](../../adr/ADR-003-one-key-one-algorithm.md)), the break from 1.0.x ([ADR-004](../../adr/ADR-004-break-from-v1-api.md)). Still open: [../../backlog.md](../../backlog.md#open-decisions).
+Settled: crypto backend ([ADR-001](../../adr/ADR-001-crypto-backend.md)), synchronous API ([ADR-002](../../adr/ADR-002-synchronous-api.md)), one key one algorithm ([ADR-003](../../adr/ADR-003-one-key-one-algorithm.md)), the break from 1.0.x ([ADR-006](../../adr/ADR-006-named-1x-tombstones.md), superseding ADR-004). Still open: [../../backlog.md](../../backlog.md#open-decisions).

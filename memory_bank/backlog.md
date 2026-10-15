@@ -57,9 +57,9 @@ An independent review of `src/` (a separate agent, adversarial, read-only) found
 
 Not changed: PEM text without its BEGIN/END lines, or a JWK passed as a JSON string, still reads as an HMAC secret — indistinguishable from a secret without guessing. A PEM inside a `Uint8Array` is now refused.
 
-### Open: 1.x tombstones under `require` and Node ESM
+### Resolved: 1.x tombstones under `require` and Node ESM
 
-Found while re-checking the packed tarball: the tombstones live on the default export only, so `require('react-native-jwt-io').encode` and a Node ESM default import get `undefined` and fail with `jwt.encode is not a function` instead of `JwtMigrationError`. Metro and bundlers are fine. Decide: add named `encode`/`decode` tombstones (ADR-004 forbids an unverified `decode`, not a throwing one), or accept the gap. Details: [_inbox/cjs-default-export-tombstones.md](_inbox/cjs-default-export-tombstones.md).
+Found while re-checking the packed tarball: the tombstones lived on the default export only, so `require('react-native-jwt-io').encode` and a Node ESM default import got `undefined` and failed with `jwt.encode is not a function` instead of `JwtMigrationError`. Decided on 2026-10-15: `encode` and `decode` are also exported by name, as throwing tombstones — [ADR-006](adr/ADR-006-named-1x-tombstones.md), superseding ADR-004. `scripts/check-build.cjs` checks both loading paths on every `prepack`. Background: [_inbox/cjs-default-export-tombstones.md](_inbox/cjs-default-export-tombstones.md).
 
 ## Decided
 
@@ -68,7 +68,7 @@ Found while re-checking the packed tarball: the tombstones live on the default e
 | OD-1 | Crypto backend | `@noble/hashes` + `@noble/curves` + `micro-rsa-dsa-dh`, pure JavaScript, no cryptography of our own, no native module. Accepted 2026-10-14, subject to the Hermes measurement in FT-001 stage 1a | [ADR-001](adr/ADR-001-crypto-backend.md) |
 | OD-2 | Sync or async `sign` / `verify` | Synchronous core, no promises in 2.0.0; asynchrony only in separate functions that wait on the network or the user. Remote JWKS moved to 2.1. Accepted 2026-10-15 | [ADR-002](adr/ADR-002-synchronous-api.md) |
 | OD-3 | How the algorithm is chosen | One key, one algorithm (RFC 8725): a bare secret is HS256 unless the `algorithm` option says otherwise; an imported key carries its own; no `algorithms` list; `none` never. Accepted 2026-10-15 | [ADR-003](adr/ADR-003-one-key-one-algorithm.md) |
-| OD-4 | Relationship to 1.0.x | New names, no `decode`, no compatibility layer; tombstone default export until 3.0.0; short secrets refused unless `allowShortSecret`; hex secrets via `hexToBytes`; 1.0.x security fixes for three months after 2.0.0, then npm deprecate. Accepted 2026-10-15 | [ADR-004](adr/ADR-004-break-from-v1-api.md) |
+| OD-4 | Relationship to 1.0.x | New names, no `decode` that decodes, no compatibility layer; tombstones (default export, and named `encode`/`decode` since ADR-006) until 3.0.0; short secrets refused unless `allowShortSecret`; hex secrets via `hexToBytes`; 1.0.x security fixes for three months after 2.0.0, then npm deprecate. Accepted 2026-10-15 | [ADR-006](adr/ADR-006-named-1x-tombstones.md), superseding ADR-004 |
 | OD-5 | Minimum React Native version | No `react-native` peer; the floor is the lowest React Native whose Hermes has every feature the code needs (`BigInt`, `Object.hasOwn`), measured in FT-001 stage 1a starting from 0.70; runtime host check with `JwtHostRequirementError`; Hermes only. Accepted 2026-10-15 | [ADR-005](adr/ADR-005-host-requirements.md) |
 | OD-6 | Ship 1.0.4 first | Yes: `jsrsasign` ^11.1.5, a `files` field so the memory bank is not published, `CHANGELOG.md`, a README note on 2.0.0 and the 1.0.x window. Accepted and published 2026-10-15 | [product/roadmap.md](product/roadmap.md) |
 

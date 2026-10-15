@@ -202,10 +202,12 @@ the JS thread; keep the slow ones out of render paths. ES256 verification is abo
 
 What else changes:
 
-- **The default export throws.** `jwt.encode`, `jwt.decode` and `jwt.verify` throw
-  `JwtMigrationError` with the replacement in the message, until 3.0.
-- **There is no `decode`.** In 1.x it verified; a 2.x `decode` that did not would
-  silently drop a security check from your code.
+- **The 1.x functions throw.** `jwt.encode`, `jwt.decode` and the default export's
+  `jwt.verify` throw `JwtMigrationError` with the replacement in the message,
+  until 3.0 — whether you `import jwt from`, `require()`, or import from Node ESM.
+- **`decode` does not decode.** In 1.x it verified; a 2.x `decode` that did not
+  would silently drop a security check from your code, so it only throws. Use
+  `verify`, or `decodeUnverified` to read without checking.
 - **`exp` and `nbf` are now enforced.** 1.x accepted expired tokens.
 - **Short secrets are refused.** HS256 needs 32 bytes. If you cannot change the
   issuer's secret, pass `allowShortSecret: true` to `sign` and `verify`.

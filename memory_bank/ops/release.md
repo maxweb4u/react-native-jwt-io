@@ -31,7 +31,7 @@ Security fixes only, cut from the last 1.0.x tag, for three months after 2.0.0 i
 npm deprecate react-native-jwt-io@"<2.0.0" "1.x is no longer supported. Upgrade to 2.x: see the migration guide in the README."
 ```
 
-The end date is written into the README with the 2.0.0 release. Decided in [ADR-004](../adr/ADR-004-break-from-v1-api.md).
+The end date is written into the README with the 2.0.0 release. Decided in [ADR-006](../adr/ADR-006-named-1x-tombstones.md).
 
 ## Checklist
 
