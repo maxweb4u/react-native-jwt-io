@@ -2,6 +2,8 @@
  * SC-15, SC-17 and the PS* random-source check: failures that must read as a
  * sentence, not as a stack trace from inside a dependency.
  */
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 import jwt, { importPEM, JwtError, JwtMigrationError, sign } from '../index';
 import { nodeKeyPair, pem } from './helpers/node';
 
@@ -31,6 +33,34 @@ describe('host requirements (SC-17)', () => {
     expect(error.code).toBe('ERR_JWT_HOST_REQUIREMENT');
     expect(error.feature).toBe('Object.hasOwn');
     expect(error.message).toMatch(/polyfill/);
+    expect(error.message).toMatch(/0\.71/);
+  });
+
+  it('names a Babel setup that rewrites ** into Math.pow (React Native 0.70)', () => {
+    // Compiles hostCheck.ts the way React Native 0.70's preset did — with **
+    // lowered to Math.pow — and runs it. The check must fail on its own **,
+    // before noble's Ed25519 code would.
+    // @babel/core 8 is ESM-only, so it runs in its own Node process.
+    const compile = `
+      import { transformFileSync } from '@babel/core';
+      const result = transformFileSync(process.argv[1], {
+        babelrc: false,
+        configFile: false,
+        presets: [['@babel/preset-env', { targets: { chrome: '50' }, modules: 'commonjs' }], '@babel/preset-typescript'],
+      });
+      process.stdout.write(result.code);`;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', compile, join(__dirname, '../host/hostCheck.ts')], {
+      cwd: join(__dirname, '../..'),
+      encoding: 'utf8',
+    });
+    const compiled = child.stdout;
+    expect(compiled).toMatch(/Math\.pow/);
+    const module = { exports: {} };
+    const run = new Function('require', 'module', 'exports', compiled);
+    const errors = jest.requireActual('../errors/errors');
+    expect(() => run(() => errors, module, module.exports)).toThrow(
+      expect.objectContaining({ code: 'ERR_JWT_HOST_REQUIREMENT', feature: 'BigInt exponentiation (**)' }),
+    );
   });
 
   it('names BigInt', () => {
