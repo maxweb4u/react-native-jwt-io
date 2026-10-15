@@ -23,7 +23,8 @@ const HMAC_MIN_BYTES: Record<HmacAlgorithm, number> = { HS256: 32, HS384: 48, HS
  */
 export function resolveKey(key: KeyInput, algorithm: unknown): ResolvedKey {
   if (typeof key === 'string' || isBytes(key)) {
-    if (typeof key === 'string' && /-----BEGIN [A-Z ]+-----/.test(key)) {
+    const text = typeof key === 'string' ? key : String.fromCharCode(...key.subarray(0, 64));
+    if (/-----BEGIN [A-Z ]+-----/.test(text)) {
       // A PEM passed as a string would otherwise be used as an HMAC secret —
       // the precondition of RS256-to-HS256 confusion.
       throw new JwtKeyError("A PEM key was passed as a string. Import it with importPEM(pem, 'RS256') — strings are HMAC secrets.");

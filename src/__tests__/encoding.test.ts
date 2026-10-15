@@ -87,7 +87,7 @@ describe('durations', () => {
 describe('hexToBytes', () => {
   it('decodes and validates', () => {
     expect(Array.from(hexToBytes('DeadBeef'))).toEqual([0xde, 0xad, 0xbe, 0xef]);
-    expect(() => hexToBytes('abc')).toThrow(TypeError);
-    expect(() => hexToBytes('zz')).toThrow(TypeError);
+    expect(() => hexToBytes('abc')).toThrow(expect.objectContaining({ code: 'ERR_JWT_KEY_INVALID' }));
+    expect(() => hexToBytes('zz')).toThrow(expect.objectContaining({ code: 'ERR_JWT_KEY_INVALID' }));
   });
 });

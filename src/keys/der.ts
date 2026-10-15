@@ -51,7 +51,13 @@ export function readNodes(bytes: Uint8Array): DerNode[] {
         if (b === undefined) {
           throw new DerError('truncated length');
         }
+        if (i === 0 && b === 0) {
+          throw new DerError('non-minimal length');
+        }
         length = length * 256 + b;
+      }
+      if (length < 0x80) {
+        throw new DerError('non-minimal length');
       }
       offset += count;
     }
@@ -87,6 +93,9 @@ export function readUnsignedInteger(node: DerNode | undefined): bigint {
   if (content.length === 0 || ((content[0] as number) & 0x80) !== 0) {
     throw new DerError('expected a positive integer');
   }
+  if (content.length > 1 && content[0] === 0 && ((content[1] as number) & 0x80) === 0) {
+    throw new DerError('non-minimal integer');
+  }
   let value = BigInt(0);
   for (const byte of content) {
     value = (value << BigInt(8)) | BigInt(byte);
@@ -99,21 +108,29 @@ export function readOid(node: DerNode | undefined): string {
   if (content.length === 0) {
     throw new DerError('empty OID');
   }
-  const first = content[0] as number;
-  const parts = [Math.min(2, Math.floor(first / 40)), first - Math.min(2, Math.floor(first / 40)) * 40];
-  let value = 0;
-  for (let i = 1; i < content.length; i++) {
-    const byte = content[i] as number;
-    value = value * 128 + (byte & 0x7f);
-    if ((byte & 0x80) === 0) {
-      parts.push(value);
-      value = 0;
-    }
-  }
   if (((content[content.length - 1] as number) & 0x80) !== 0) {
     throw new DerError('truncated OID');
   }
-  return parts.join('.');
+  const subidentifiers: number[] = [];
+  let value = 0;
+  for (const byte of content) {
+    value = value * 128 + (byte & 0x7f);
+    if ((byte & 0x80) === 0) {
+      subidentifiers.push(value);
+      value = 0;
+    }
+  }
+  // X.690 §8.19.4: the first subidentifier packs the first two arcs.
+  const first = subidentifiers[0] as number;
+  const arc0 = first < 80 ? Math.floor(first / 40) : 2;
+  return [arc0, first - arc0 * 40, ...subidentifiers.slice(1)].join('.');
+}
+
+/** Absent, or an explicit NULL — the only parameters RSA and Ed25519 keys may carry. */
+export function expectNoParameters(node: DerNode | undefined): void {
+  if (node !== undefined && (node.tag !== DerTag.Null || node.content.length !== 0)) {
+    throw new DerError('unexpected algorithm parameters');
+  }
 }
 
 /** A BIT STRING with no unused bits, as every key format uses. */

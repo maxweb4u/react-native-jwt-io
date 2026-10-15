@@ -11,7 +11,7 @@ import { type Jwk } from '../types/jwt';
 import { base64UrlDecode } from '../utils/base64';
 import { bytesToBigInt, concatBytes, equalBytes } from '../utils/bytes';
 import { isPlainObject } from '../utils/json';
-import { createKey, type EcCurve, type JwtKey, type KeyMaterial } from './JwtKey';
+import { createKey, type EcCurve, type JwtKey, type KeyMaterial, rsaPrivatePartsMatch } from './JwtKey';
 
 const EC_ALGORITHM: Record<EcCurve, Algorithm> = {
   'P-256': 'ES256',
@@ -26,6 +26,10 @@ const SUPPORTED_CURVES: readonly string[] = Object.keys(EC_ALGORITHM);
 export function unsupportedReason(jwk: Jwk): string | null {
   if (jwk.use !== undefined && jwk.use !== 'sig') {
     return `use "${String(jwk.use)}"`;
+  }
+  const ops = jwk.key_ops;
+  if (ops !== undefined && !(Array.isArray(ops) && ops.some((op) => op === 'sign' || op === 'verify'))) {
+    return `key_ops ${JSON.stringify(ops)}`;
   }
   if (jwk.alg !== undefined && !isAlgorithm(jwk.alg)) {
     return `alg "${String(jwk.alg)}"`;
@@ -99,8 +103,20 @@ function materialOf(jwk: Jwk): KeyMaterial {
     case 'RSA': {
       const n = bytesToBigInt(member(jwk, 'n'));
       const e = bytesToBigInt(member(jwk, 'e'));
-      const d = jwk.d === undefined ? undefined : bytesToBigInt(member(jwk, 'd'));
-      return d === undefined ? { kind: 'rsa', n, e } : { kind: 'rsa', n, e, d };
+      if (jwk.d === undefined) {
+        return { kind: 'rsa', n, e };
+      }
+      const d = bytesToBigInt(member(jwk, 'd'));
+      // RFC 7518 §6.3.2: the primes come with d or not at all. When present,
+      // they must produce this n, e and d.
+      if (jwk.p !== undefined || jwk.q !== undefined) {
+        const p = bytesToBigInt(member(jwk, 'p'));
+        const q = bytesToBigInt(member(jwk, 'q'));
+        if (!rsaPrivatePartsMatch(n, e, d, p, q)) {
+          throw new JwtKeyError('The RSA JWK parts do not belong together.');
+        }
+      }
+      return { kind: 'rsa', n, e, d };
     }
     case 'EC': {
       const curve = jwk.crv as EcCurve;

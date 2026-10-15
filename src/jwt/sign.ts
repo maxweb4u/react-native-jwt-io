@@ -3,10 +3,10 @@ import { JwtClaimError } from '../errors/errors';
 import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { type SignOptions } from '../types/options';
 import { base64UrlEncode } from '../utils/base64';
-import { isPlainObject } from '../utils/json';
-import { MAX_PLAUSIBLE_NUMERIC_DATE, toNumericDate } from '../utils/time';
+import { isPlainObject, parseJson } from '../utils/json';
+import { MAX_PLAUSIBLE_NUMERIC_DATE } from '../utils/time';
 import { utf8Encode } from '../utils/utf8';
-import { durationOption } from './claims';
+import { currentSeconds, durationOption, stringList, validateRegisteredClaims } from './claims';
 
 const RESERVED_HEADER = ['alg', 'crit', 'b64'];
 
@@ -17,40 +17,31 @@ const RESERVED_HEADER = ['alg', 'crit', 'b64'];
  * are seconds; a value that looks like milliseconds is refused.
  */
 export function sign(payload: Record<string, unknown>, key: KeyInput, options: SignOptions = {}): string {
+  const opts: SignOptions = options ?? {};
   if (!isPlainObject(payload)) {
     throw new JwtClaimError('payload', 'The payload must be a plain object.');
   }
-  const resolved = resolveKey(key, options.algorithm);
-  assertSecretStrength(resolved, options.allowShortSecret);
+  const resolved = resolveKey(key, opts.algorithm);
+  assertSecretStrength(resolved, opts.allowShortSecret);
   const claims: Record<string, unknown> = { ...payload };
 
-  for (const name of ['exp', 'nbf', 'iat'] as const) {
-    const value = claims[name];
-    if (value === undefined) {
-      continue;
-    }
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new JwtClaimError(name, `"${name}" must be a NumericDate (a number of seconds).`);
-    }
-    if (value > MAX_PLAUSIBLE_NUMERIC_DATE) {
-      throw new JwtClaimError(name, `"${name}" is ${value}, which looks like milliseconds. JWT times are seconds: use Math.floor(Date.now() / 1000).`);
-    }
-  }
-
-  const now = toNumericDate(options.now ?? new Date());
-  if (claims.iat === undefined && options.noTimestamp !== true) {
+  const now = Math.floor(currentSeconds(opts.now));
+  if (claims.iat === undefined && opts.noTimestamp !== true) {
     claims.iat = now;
   }
   const base = typeof claims.iat === 'number' ? claims.iat : now;
-  setRelative(claims, 'exp', base, durationOption(options.expiresIn, 'expiresIn'), 'expiresIn');
-  setRelative(claims, 'nbf', base, durationOption(options.notBefore, 'notBefore'), 'notBefore');
-  setOnce(claims, 'iss', options.issuer, 'issuer');
-  setOnce(claims, 'sub', options.subject, 'subject');
-  setOnce(claims, 'jti', options.jwtId, 'jwtId');
-  setOnce(claims, 'aud', typeof options.audience === 'object' ? [...options.audience] : options.audience, 'audience');
+  setRelative(claims, 'exp', base, durationOption(opts.expiresIn, 'expiresIn'), 'expiresIn');
+  setRelative(claims, 'nbf', base, durationOption(opts.notBefore, 'notBefore'), 'notBefore');
+  setOnce(claims, 'iss', stringOption(opts.issuer, 'issuer'), 'issuer');
+  setOnce(claims, 'sub', stringOption(opts.subject, 'subject'), 'subject');
+  setOnce(claims, 'jti', stringOption(opts.jwtId, 'jwtId'), 'jwtId');
+  setOnce(claims, 'aud', audienceOption(opts.audience), 'audience');
 
+  if (opts.header !== undefined && !isPlainObject(opts.header)) {
+    throw new JwtClaimError('header', 'options.header must be a plain object.');
+  }
   const header: Record<string, unknown> = { alg: resolved.algorithm, typ: 'JWT' };
-  for (const [name, value] of Object.entries(options.header ?? {})) {
+  for (const [name, value] of Object.entries(opts.header ?? {})) {
     if (RESERVED_HEADER.includes(name)) {
       throw new JwtClaimError(`header.${name}`, `The header "${name}" cannot be set through options.header.`);
     }
@@ -58,12 +49,39 @@ export function sign(payload: Record<string, unknown>, key: KeyInput, options: S
       header[name] = value;
     }
   }
-  const kid = options.keyId ?? resolved.kid;
+  const kid = stringOption(opts.keyId, 'keyId') ?? resolved.kid;
   if (kid !== undefined) {
     header.kid = kid;
   }
 
-  const signingInput = `${encodeJson(header, 'header')}.${encodeJson(claims, 'payload')}`;
+  // Validated as serialized, not as passed: a `toJSON` method or a getter can
+  // make JSON.stringify emit something other than what was checked above.
+  const headerText = serialize(header, 'header');
+  const headerEcho = parseJson(headerText) as Record<string, unknown>;
+  if (
+    !isPlainObject(headerEcho) ||
+    headerEcho.alg !== resolved.algorithm ||
+    RESERVED_HEADER.slice(1).some((name) => name in headerEcho)
+  ) {
+    throw new JwtClaimError('header', 'The header does not serialize to the header that was built (a toJSON method?).');
+  }
+  const payloadText = serialize(claims, 'payload');
+  const payloadEcho = parseJson(payloadText);
+  if (!isPlainObject(payloadEcho)) {
+    throw new JwtClaimError('payload', 'The payload does not serialize to a JSON object (a toJSON method?).');
+  }
+  validateRegisteredClaims(payloadEcho);
+  for (const name of ['exp', 'nbf', 'iat'] as const) {
+    const value = payloadEcho[name];
+    if (typeof value === 'number' && value > MAX_PLAUSIBLE_NUMERIC_DATE) {
+      throw new JwtClaimError(
+        name,
+        `"${name}" is ${value}, which looks like milliseconds or an overflow. JWT times are seconds: use Math.floor(Date.now() / 1000).`,
+      );
+    }
+  }
+
+  const signingInput = `${base64UrlEncode(utf8Encode(headerText))}.${base64UrlEncode(utf8Encode(payloadText))}`;
   const signature = signBytes(resolved.algorithm, resolved.material, utf8Encode(signingInput));
   return `${signingInput}.${base64UrlEncode(signature)}`;
 }
@@ -94,12 +112,29 @@ function setOnce(claims: Record<string, unknown>, name: string, value: unknown, 
   claims[name] = value;
 }
 
-function encodeJson(value: Record<string, unknown>, name: string): string {
+function stringOption(value: unknown, name: string): string | undefined {
+  if (value !== undefined && typeof value !== 'string') {
+    throw new JwtClaimError(name, `options.${name} must be a string.`);
+  }
+  return value;
+}
+
+function audienceOption(value: unknown): string | string[] | undefined {
+  if (value === undefined || typeof value === 'string') {
+    return value;
+  }
+  return [...stringList(value, 'audience')];
+}
+
+function serialize(value: Record<string, unknown>, name: string): string {
   let text: string | undefined;
   try {
     text = JSON.stringify(value);
   } catch (error) {
     throw new JwtClaimError(name, `The ${name} cannot be serialized to JSON: ${(error as Error).message}`);
   }
-  return base64UrlEncode(utf8Encode(text as string));
+  if (typeof text !== 'string') {
+    throw new JwtClaimError(name, `The ${name} does not serialize to JSON.`);
+  }
+  return text;
 }

@@ -57,8 +57,14 @@ export function assertKeyFitsAlgorithm(material: KeyMaterial, algorithm: Algorit
     if (bitLength(material.n) < MIN_RSA_BITS) {
       throw new JwtKeyError(`RSA keys must be at least ${MIN_RSA_BITS} bits; this one is ${bitLength(material.n)}.`);
     }
-    if (material.e < BigInt(3) || material.e % BigInt(2) === BigInt(0)) {
-      throw new JwtKeyError('The RSA public exponent must be odd and at least 3.');
+    if (material.n % BigInt(2) === BigInt(0)) {
+      throw new JwtKeyError('The RSA modulus must be odd.');
+    }
+    if (material.e < BigInt(3) || material.e % BigInt(2) === BigInt(0) || material.e >= material.n) {
+      throw new JwtKeyError('The RSA public exponent must be odd, at least 3, and below the modulus.');
+    }
+    if (material.d !== undefined && (material.d <= BigInt(1) || material.d >= material.n)) {
+      throw new JwtKeyError('The RSA private exponent is out of range for its modulus.');
     }
     return;
   }
@@ -85,6 +91,28 @@ function describe(material: KeyMaterial): string {
     case 'okp':
       return `an ${material.curve} key`;
   }
+}
+
+/**
+ * When the primes are known (PKCS#1, PKCS#8, and JWKs that carry them), a
+ * private key whose parts do not belong together is refused at import —
+ * otherwise it would sign tokens nobody can verify.
+ */
+export function rsaPrivatePartsMatch(n: bigint, e: bigint, d: bigint, p: bigint, q: bigint): boolean {
+  const one = BigInt(1);
+  if (p <= one || q <= one || p * q !== n) {
+    return false;
+  }
+  const gcd = (a: bigint, b: bigint): bigint => {
+    let x = a;
+    let y = b;
+    while (y !== BigInt(0)) {
+      [x, y] = [y, x % y];
+    }
+    return x;
+  };
+  const lambda = ((p - one) * (q - one)) / gcd(p - one, q - one);
+  return (e * d) % lambda === one;
 }
 
 export function createKey(material: KeyMaterial, algorithm: Algorithm, kid?: string): JwtKey {

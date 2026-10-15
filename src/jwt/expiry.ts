@@ -1,6 +1,6 @@
 import { type ClockOptions } from '../types/options';
-import { fromNumericDate, toNumericDate } from '../utils/time';
-import { durationOption, numericClaim } from './claims';
+import { fromNumericDate } from '../utils/time';
+import { currentSeconds, durationOption, numericClaim } from './claims';
 import { parseToken } from './parse';
 
 /**
@@ -12,8 +12,8 @@ export function isExpired(token: string, options: ClockOptions = {}): boolean {
   if (exp === undefined) {
     return false;
   }
-  const now = toNumericDate(options.now ?? new Date());
-  const tolerance = durationOption(options.clockTolerance, 'clockTolerance') ?? 0;
+  const now = currentSeconds((options ?? {}).now);
+  const tolerance = durationOption((options ?? {}).clockTolerance, 'clockTolerance') ?? 0;
   return now - tolerance >= exp;
 }
 

@@ -1,3 +1,5 @@
+import { JwtKeyError } from '../errors/errors';
+
 export function isBytes(value: unknown): value is Uint8Array {
   return value instanceof Uint8Array;
 }
@@ -35,7 +37,7 @@ export function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
  */
 export function hexToBytes(hex: string): Uint8Array {
   if (typeof hex !== 'string' || hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
-    throw new TypeError('hexToBytes expects an even-length string of hexadecimal digits.');
+    throw new JwtKeyError('hexToBytes expects an even-length string of hexadecimal digits.');
   }
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) {

@@ -42,13 +42,22 @@ export function signBytes(algorithm: Algorithm, material: KeyMaterial, data: Uin
   if (!canSign(material)) {
     throw new JwtKeyError(`A public key cannot sign. Import the private key to sign ${algorithm} tokens.`);
   }
+  if (algorithm.startsWith('PS')) {
+    assertRandomSource(`${algorithm} signing`);
+  }
+  try {
+    return signWith(algorithm, material, data);
+  } catch (error) {
+    // The crypto packages throw plain Errors for keys they cannot use.
+    throw new JwtKeyError(`Signing with this ${algorithm} key failed: ${(error as Error).message}`);
+  }
+}
+
+function signWith(algorithm: Algorithm, material: KeyMaterial, data: Uint8Array): Uint8Array {
   switch (material.kind) {
     case 'secret':
       return hmac(hashOf(algorithm), material.secret, data);
     case 'rsa':
-      if (algorithm.startsWith('PS')) {
-        assertRandomSource(`${algorithm} signing`);
-      }
       return rsaSigner(algorithm).sign({ n: material.n, d: material.d as bigint }, data);
     case 'ec':
       // Compact r‖s, as JWS requires (RFC 7518 §3.4), deterministic per RFC 6979.

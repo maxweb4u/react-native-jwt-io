@@ -2,7 +2,7 @@
  * Supported JWS algorithms. `none` is not one of them, and never will be.
  * See memory_bank/domain/algorithms.md.
  */
-export const Algorithm = {
+export const Algorithm = Object.freeze({
   HS256: 'HS256',
   HS384: 'HS384',
   HS512: 'HS512',
@@ -17,7 +17,7 @@ export const Algorithm = {
   ES512: 'ES512',
   ES256K: 'ES256K',
   EdDSA: 'EdDSA',
-} as const;
+} as const);
 export type Algorithm = (typeof Algorithm)[keyof typeof Algorithm];
 
 export type HmacAlgorithm = 'HS256' | 'HS384' | 'HS512';

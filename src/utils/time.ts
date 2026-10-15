@@ -6,10 +6,6 @@
 /** Above this a NumericDate is almost certainly milliseconds: 1e11 seconds is the year 5138. */
 export const MAX_PLAUSIBLE_NUMERIC_DATE = 1e11;
 
-export function toNumericDate(date: Date): number {
-  return Math.floor(date.getTime() / 1000);
-}
-
 export function fromNumericDate(seconds: number): Date {
   return new Date(seconds * 1000);
 }
@@ -49,7 +45,7 @@ export function parseDuration(input: number | string): number | null {
   if (typeof input === 'number') {
     return Number.isFinite(input) && input >= 0 ? Math.floor(input) : null;
   }
-  if (typeof input !== 'string') {
+  if (typeof input !== 'string' || input.length > 64) {
     return null;
   }
   const match = DURATION.exec(input.trim());
@@ -61,5 +57,7 @@ export function parseDuration(input: number | string): number | null {
   if (!Object.prototype.hasOwnProperty.call(UNIT_SECONDS, name)) {
     return null;
   }
-  return Math.floor(Number(match[1]) * (UNIT_SECONDS[name] as number));
+  const seconds = Math.floor(Number(match[1]) * (UNIT_SECONDS[name] as number));
+  // '999…9s' parses to Infinity; an infinite tolerance would switch off exp.
+  return Number.isFinite(seconds) ? seconds : null;
 }

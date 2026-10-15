@@ -22,6 +22,7 @@ export function verify<TPayload = JwtPayload>(
   options: VerifyOptions = {},
 ): DecodedJwt<TPayload> {
   const { header, payload, signingInput, signature } = parseToken(token);
+  const opts: VerifyOptions = options ?? {};
 
   const alg = header.alg as string;
   if (alg.toLowerCase() === 'none') {
@@ -37,20 +38,19 @@ export function verify<TPayload = JwtPayload>(
   if ('b64' in header) {
     throw new JwtMalformedError('Unencoded payloads ("b64", RFC 7797) are not supported.');
   }
-  if (header.kid !== undefined && typeof header.kid !== 'string') {
-    throw new JwtMalformedError('The header "kid" must be a string.');
-  }
 
   const chosen = isJwtKeySet(key) ? selectKey(key, header.kid, alg) : key;
-  const resolved = resolveKey(chosen, isJwtKeySet(key) ? undefined : options.algorithm);
+  // `algorithm` constrains a key set too: a token whose key in the set is
+  // for another algorithm fails, rather than the option being ignored.
+  const resolved = resolveKey(chosen, opts.algorithm);
   if (resolved.algorithm !== alg) {
     throw new JwtAlgorithmError(`The token is signed with ${alg}, but the key is for ${resolved.algorithm}.`);
   }
-  assertSecretStrength(resolved, options.allowShortSecret);
+  assertSecretStrength(resolved, opts.allowShortSecret);
   if (!verifyBytes(alg, resolved.material, signingInput, signature)) {
     throw new JwtSignatureError();
   }
 
-  validateClaims(header, payload, options);
+  validateClaims(header, payload, opts);
   return Object.freeze({ header, payload: payload as TPayload });
 }

@@ -66,11 +66,14 @@ export function selectKey(set: JwtKeySet, kid: string | undefined, alg: Algorith
     if (sameKid.length === 0) {
       throw new JwtKeyNotFoundError(`No key in the set has kid "${kid}".`, kid);
     }
-    const match = sameKid.find((key) => key.algorithm === alg);
-    if (!match) {
+    const matches = sameKid.filter((key) => key.algorithm === alg);
+    if (matches.length === 0) {
       throw new JwtAlgorithmError(`The key with kid "${kid}" is for ${sameKid.map((k) => k.algorithm).join(', ')}, but the token says ${alg}.`);
     }
-    return match;
+    if (matches.length > 1) {
+      throw new JwtKeyNotFoundError(`${matches.length} keys in the set have kid "${kid}" and are for ${alg}; the choice would be a guess.`, kid);
+    }
+    return matches[0] as JwtKey;
   }
   const forAlg = set.keys.filter((key) => key.algorithm === alg);
   if (forAlg.length !== 1) {

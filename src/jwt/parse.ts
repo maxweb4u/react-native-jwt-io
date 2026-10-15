@@ -3,6 +3,7 @@ import { type JwtHeader, type JwtPayload } from '../types/jwt';
 import { base64UrlDecode } from '../utils/base64';
 import { isPlainObject, parseJson } from '../utils/json';
 import { utf8Decode, utf8Encode } from '../utils/utf8';
+import { validateRegisteredClaims } from './claims';
 
 /** Larger tokens are refused before any decoding work. HTTP headers rarely allow more than 16 KiB. */
 export const MAX_TOKEN_LENGTH = 65536;
@@ -38,14 +39,20 @@ export function parseToken(token: unknown): ParsedToken {
   if (typeof header.alg !== 'string' || header.alg.length === 0) {
     throw new JwtMalformedError('The header has no "alg".');
   }
+  for (const name of ['typ', 'cty', 'kid'] as const) {
+    if (header[name] !== undefined && typeof header[name] !== 'string') {
+      throw new JwtMalformedError(`The header "${name}" must be a string.`);
+    }
+  }
   const payload = decodeJsonSegment(payloadPart, 'payload');
+  validateRegisteredClaims(payload);
   const signature = base64UrlDecode(signaturePart);
   if (signature === null) {
     throw new JwtMalformedError('The signature segment is not valid base64url.');
   }
   return {
-    header: header as JwtHeader,
-    payload: payload as JwtPayload,
+    header: Object.freeze(header) as JwtHeader,
+    payload: Object.freeze(payload) as JwtPayload,
     // The segments are base64url, so this is ASCII.
     signingInput: utf8Encode(`${headerPart}.${payloadPart}`),
     signature,

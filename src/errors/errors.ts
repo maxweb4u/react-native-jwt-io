@@ -7,7 +7,7 @@
  * See memory_bank/engineering/typescript.md#errors.
  */
 
-export const JwtErrorCode = {
+export const JwtErrorCode = Object.freeze({
   Malformed: 'ERR_JWT_MALFORMED',
   Algorithm: 'ERR_JWT_ALGORITHM',
   SignatureInvalid: 'ERR_JWT_SIGNATURE_INVALID',
@@ -18,7 +18,7 @@ export const JwtErrorCode = {
   KeyNotFound: 'ERR_JWT_KEY_NOT_FOUND',
   HostRequirement: 'ERR_JWT_HOST_REQUIREMENT',
   Migration: 'ERR_JWT_MIGRATION',
-} as const;
+} as const);
 export type JwtErrorCode = (typeof JwtErrorCode)[keyof typeof JwtErrorCode];
 
 export class JwtError extends Error {
