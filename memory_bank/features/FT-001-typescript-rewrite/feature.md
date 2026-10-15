@@ -5,8 +5,8 @@ purpose: 'Rewrite the library in TypeScript as 2.0.0: safe verification, claim v
 derived_from:
   - ../../product/context.md
   - ../../domain/validation.md
-status: draft
-delivery_status: planned
+status: active
+delivery_status: in_progress
 ---
 
 # FT-001 — TypeScript rewrite

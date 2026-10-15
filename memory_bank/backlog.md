@@ -19,6 +19,19 @@ Each blocks part of [FT-001](features/FT-001-typescript-rewrite/feature.md). The
 
 Nothing is open.
 
+## Open work for 2.0.0
+
+What stands between the built code (stages 1–6, 2026-10-15) and the release.
+
+| ID | Item |
+|-|-|
+| W-1 | ~~Android on Hermes~~ — done 2026-10-15 on a Realme RMX3363 (Android 13): 11/11, numbers in [engineering/performance.md](engineering/performance.md). |
+| W-2 | **The React Native floor** ([ADR-005](adr/ADR-005-host-requirements.md)). Building React Native 0.70–0.76 for iOS with Xcode 27 is unlikely to work; Android, with an older JDK and Gradle, is the realistic way to find the first Hermes with `Object.hasOwn`. Until measured, the README states 0.87 as the tested version and no floor. |
+| W-3 | **Wycheproof vectors** for ECDSA, EdDSA and RSA at the backend boundary — promised by [engineering/testing-policy.md](engineering/testing-policy.md), not yet written. |
+| W-4 | **`example/` app** (stage 7, SC-9, SC-13): the scratch app used for the measurements is the prototype — a self-test screen and a benchmark. |
+| W-5 | **README, migration guide, CHANGELOG for 2.0.0** (stage 8). |
+| W-6 | **Hot paths.** On a mid-range phone ES256 verification takes 60 ms, ES384/ES512 148/319 ms, RSA signing 0.8 s, all on the JS thread; try noble's per-key `Point.precompute` before anything native. Not a release blocker. |
+
 ## Decided
 
 | ID | Decision | Outcome | Record |

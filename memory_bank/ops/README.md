@@ -9,5 +9,5 @@ status: active
 
 # Ops Index
 
-- [Development](development.md) — `draft`. Local setup, everyday commands, and the example application.
+- [Development](development.md) — local setup, everyday commands, and the example application.
 - [Release](release.md) — versioning, the publish checklist, and what ships in the tarball.

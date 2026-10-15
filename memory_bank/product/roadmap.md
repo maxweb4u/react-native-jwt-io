@@ -26,17 +26,17 @@ Tracked as [FT-001](../features/FT-001-typescript-rewrite/feature.md); the order
 | Stage | Content | State |
 |-|-|-|
 | 0 | Memory bank | done |
-| 1 | Package scaffold: TypeScript, ESLint, Jest, build | planned |
-| 1a | Crypto speed on Hermes, and the React Native floor, measured on devices ([ADR-001](../adr/ADR-001-crypto-backend.md), [ADR-005](../adr/ADR-005-host-requirements.md)) | planned |
-| 2 | Core: base64url, JSON, token parsing, errors | planned |
-| 3 | Crypto backend over noble and `micro-rsa-dsa-dh` | planned |
-| 4 | Key import: secret, PEM, JWK; local JWKS | planned |
-| 5 | Synchronous `sign` / `verify` / claim validation / helpers | planned |
-| 6 | Interop and hostile-input test suites | planned |
+| 1 | Package scaffold: TypeScript, ESLint, Jest, build | done |
+| 1a | Crypto speed on Hermes, and the React Native floor, measured on devices ([ADR-001](../adr/ADR-001-crypto-backend.md), [ADR-005](../adr/ADR-005-host-requirements.md)) | in_progress |
+| 2 | Core: base64url, JSON, token parsing, errors | done |
+| 3 | Crypto backend over noble and `micro-rsa-dsa-dh` | done |
+| 4 | Key import: secret, PEM, JWK; local JWKS | done |
+| 5 | Synchronous `sign` / `verify` / claim validation / helpers | done |
+| 6 | Interop and hostile-input test suites | done |
 | 7 | `example/` app on a device, both platforms | planned |
 | 8 | README, migration guide, changelog, npm release | planned |
 
-Stage 5 waits on the decisions still open in [../backlog.md](../backlog.md#open-decisions).
+Stages 1–6 were built on 2026-10-15 on the `release/v2.0.0` branch: `npm run verify` passes with 210 tests. Stage 1a has its numbers for an iOS simulator and a physical Android phone ([../engineering/performance.md](../engineering/performance.md)); the React Native floor is open, as are stages 7 and 8 — the remaining work is listed in [../backlog.md](../backlog.md#open-work-for-200).
 
 ## After 2.0.0
 
