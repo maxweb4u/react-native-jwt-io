@@ -4,7 +4,8 @@
   "description": "This package generates JWT tokens using jsrsasign library.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "check:docs": "node scripts/check-memory-bank.mjs"
   },
   "repository": {
     "type": "git",
