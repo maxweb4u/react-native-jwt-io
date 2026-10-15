@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org).
 
-## [1.0.4] — unreleased
+## [1.0.4] — 2026-10-15
 
 Security update of the 1.0.x line. The API and its behaviour are unchanged.
 
