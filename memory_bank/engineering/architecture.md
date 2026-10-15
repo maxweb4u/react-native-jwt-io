@@ -16,7 +16,7 @@ canonical_for:
 ## Layers
 
 ```
-src/host/       hostCheck: engine features, checked before the crypto packages load (ADR-005).
+src/host/       hostCheck: engine features and a `**`-rewriting Babel setup, checked before the crypto packages load (ADR-005).
                 random: the getRandomValues check for PS* signing.
 src/errors/     JwtError and its subclasses, each with a stable `code`.
 src/types/      Public types: Algorithm, JwtHeader, JwtPayload, Jwk, options. No logic.

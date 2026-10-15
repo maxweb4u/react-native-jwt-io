@@ -45,6 +45,10 @@ Realme RMX3363, Android 13, arm64-v8a, mid-range (2021); same app and tarball, R
 
 The phone is about 1.7× slower than the simulator across the board, so the simulator ratios against 1.0.4 below carry over.
 
+## The oldest supported setup — measured 2026-10-15
+
+Official Hermes v0.12.0 CLI (August 2022, the React Native 0.70/0.71 era) on the same Mac, with the self-test compiled through React Native 0.71's Babel preset and run as bytecode: all 12 checks pass, and the times match the 0.87 simulator within 10% (ES256 verify 37 ms, RS256 verify 5.7 ms, EdDSA verify 18 ms). An old app gains nothing and loses nothing by its Hermes version.
+
 ## Against 1.0.4 (`jsrsasign` 11), same simulator
 
 | Operation | 1.0.4 | 2.0 | |

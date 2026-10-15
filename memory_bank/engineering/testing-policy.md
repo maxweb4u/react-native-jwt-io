@@ -28,8 +28,10 @@ Jest. No device is needed for any automated suite; the device check lives in `ex
 | claims | Signing options, every claim rule at its boundary, secrets, expiry helpers | `src/__tests__/claims.test.ts` |
 | encoding | base64url, base64, UTF-8, durations against Node | `src/__tests__/encoding.test.ts` |
 | host and API | Missing engine features at import, PS* without RNG, 1.x tombstones, the exact export list, no promises | `src/__tests__/host.test.ts`, `api.test.ts` |
+| Wycheproof | 1717 C2SP vectors — malleable and out-of-range signatures, bad padding, edge-case points — through `importPEM` and the crypto module | `src/__tests__/wycheproof.test.ts`, fixtures in `src/__tests__/fixtures/wycheproof/` |
+| README | Every example in the README, run as written | `src/__tests__/readme.test.ts` |
 
-All suites run in one Jest project, in Node, with `now` injected where time matters. The device check — that every algorithm runs on Hermes — is the self-test screen described in [performance.md](performance.md).
+All suites run in one Jest project, in Node, with `now` injected where time matters. The device check — that every algorithm runs on Hermes — is the self-test screen of `example/` (12 checks), described in [performance.md](performance.md).
 
 Node's `crypto` is the oracle because it is an independent implementation of every algorithm here. It is a dev dependency only; nothing in `src/` may import it.
 

@@ -26,10 +26,10 @@ What stands between the built code (stages 1–6, 2026-10-15) and the release.
 | ID | Item |
 |-|-|
 | W-1 | ~~Android on Hermes~~ — done 2026-10-15 on a Realme RMX3363 (Android 13): 11/11, numbers in [engineering/performance.md](engineering/performance.md). |
-| W-2 | **The React Native floor** ([ADR-005](adr/ADR-005-host-requirements.md)). Building React Native 0.70–0.76 for iOS with Xcode 27 is unlikely to work; Android, with an older JDK and Gradle, is the realistic way to find the first Hermes with `Object.hasOwn`. Until measured, the README states 0.87 as the tested version and no floor. |
-| W-3 | **Wycheproof vectors** for ECDSA, EdDSA and RSA at the backend boundary — promised by [engineering/testing-policy.md](engineering/testing-policy.md), not yet written. |
-| W-4 | **`example/` app** (stage 7, SC-9, SC-13): the scratch app used for the measurements is the prototype — a self-test screen and a benchmark. |
-| W-5 | **README, migration guide, CHANGELOG for 2.0.0** (stage 8). |
+| W-2 | ~~The React Native floor~~ — done 2026-10-15: **0.71**. Hermes' sources put `Object.hasOwn` at the RN 0.69 tag and `BigInt` at 0.70; running the self-test in the official Hermes v0.12.0 CLI (August 2022) then showed that RN 0.70 still fails — its Babel preset (`metro-react-native-babel-preset` 0.72) rewrites `**` into `Math.pow`, and `@noble/curves` raises a BigInt to a power on the Ed25519 path. With RN 0.71's preset (0.73.5) all 12 checks pass, from source and from bytecode. `hostCheck` now detects the rewrite at import. Details in [engineering/gotchas.md](engineering/gotchas.md). |
+| W-3 | ~~Wycheproof vectors~~ — done 2026-10-15: 1717 vectors across HS256, RS256, PS256, ES256/384/512, ES256K and EdDSA, through `importPEM` and the crypto module; all pass. |
+| W-4 | ~~`example/` app~~ — done 2026-10-15: React Native 0.87.1, library from source; Self-test 12/12 on an iOS 18.3 simulator and on the Realme RMX3363 (Release builds). |
+| W-5 | ~~README, migration guide, CHANGELOG~~ — done 2026-10-15; the README's examples run as `src/__tests__/readme.test.ts`. What remains of stage 8 is the release itself. |
 | W-6 | **Hot paths.** On a mid-range phone ES256 verification takes 60 ms, ES384/ES512 148/319 ms, RSA signing 0.8 s, all on the JS thread; try noble's per-key `Point.precompute` before anything native. Not a release blocker. |
 
 ## Decided

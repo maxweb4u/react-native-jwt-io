@@ -31,4 +31,4 @@ Node 22.13 or later (matching `react-native-matrix`).
 
 ## Example application
 
-`example/` is a React Native app consuming the package from source through Metro. It exists to prove what Jest cannot: that every algorithm runs under Hermes on a device, with no native crypto module installed.
+`example/` is a React Native 0.87.1 app consuming the package from source through Metro. It exists to prove what Jest cannot: that every algorithm runs under Hermes on a device, with no native crypto module installed. Setup, Release-mode commands and the wiring are in `example/README.md`; `npm install` there generates the throwaway key fixtures, which are git-ignored.
