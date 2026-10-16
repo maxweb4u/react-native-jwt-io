@@ -23,4 +23,7 @@ Conventional Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`. 
 
 ## Releases
 
-Tagged `v<version>`, matching an entry in `CHANGELOG.md`. 1.0.x patches are cut from the last 1.0.x tag if `master` has already moved to 2.0.0.
+Tagged `v<version>`, matching an entry in `CHANGELOG.md`, on the commit that was published.
+
+- Work for a release happens on a release branch (`release/v2.0.0`), which is **squash-merged** into `master` through a pull request; the package is published from `master` and the tag is put on the squash commit. The release branch is kept, for its detailed history.
+- **`1.x`** holds the 1.0.x line once `master` carries 2.x: created from the `v1.0.4` tag on 2026-10-16, before 2.0.0-alpha.0 was merged. 1.0.x security fixes go there and are published from there.

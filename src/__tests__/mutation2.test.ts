@@ -1,5 +1,5 @@
 /**
- * Tests that kill the mutants of the second review round's code (c72c284)
+ * Tests that kill the mutants of the second review round's code
  * which survived the suite: each names its mutant (K2:<id>) and fails if that
  * check is removed or weakened. The five equivalent mutants are described in
  * memory_bank/engineering/testing-policy.md#mutation-testing.
