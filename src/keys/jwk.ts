@@ -5,7 +5,7 @@ import {
   isValidEd25519PublicKey,
   normalizeEcPublicKey,
 } from '../crypto/curves';
-import { JwtKeyError } from '../errors/errors';
+import { JwtKeyError, JwtOptionError } from '../errors/errors';
 import { type Algorithm, isAlgorithm } from '../types/algorithm';
 import { type Jwk } from '../types/jwt';
 import { base64UrlDecode } from '../utils/base64';
@@ -31,17 +31,27 @@ const EC_ALGORITHM: Record<EcCurve, Algorithm> = {
 
 const SUPPORTED_CURVES: readonly string[] = Object.keys(EC_ALGORITHM);
 
-/** Why a JWK cannot be used for signatures at all, or null if it can. Used by `createJWKS` to skip such keys. */
+/** Why a JWK cannot be used for signatures at all, or null if it can. */
 export function unsupportedReason(jwk: Jwk): string | null {
+  const type = unsupportedType(jwk);
+  if (type !== null) {
+    return type;
+  }
+  if (jwk.alg !== undefined && !isAlgorithm(jwk.alg)) {
+    // RFC 9864 names Ed25519 signatures "Ed25519"; this library still calls them EdDSA.
+    return jwk.alg === 'Ed25519' ? 'alg "Ed25519" (RFC 9864) is not supported yet; EdDSA is' : `alg ${describeValue(jwk.alg)}`;
+  }
+  return null;
+}
+
+/** Why a JWK is not a signature key of a supported type, or null. `createJWKS` leaves such keys out silently. */
+export function unsupportedType(jwk: Jwk): string | null {
   if (jwk.use !== undefined && jwk.use !== 'sig') {
     return `use ${describeValue(jwk.use)}`;
   }
   const ops = jwk.key_ops;
   if (ops !== undefined && !(Array.isArray(ops) && ops.some((op) => op === 'sign' || op === 'verify'))) {
     return `key_ops ${describeValue(ops)}`;
-  }
-  if (jwk.alg !== undefined && !isAlgorithm(jwk.alg)) {
-    return `alg ${describeValue(jwk.alg)}`;
   }
   switch (jwk.kty) {
     case 'RSA':
@@ -62,15 +72,16 @@ export function unsupportedReason(jwk: Jwk): string | null {
  * need one of the first two. See memory_bank/domain/keys.md#binding.
  */
 export function importJWK(jwk: Jwk, algorithm?: Algorithm): JwtKey {
+  // The algorithm argument first: naming no algorithm is a mistake in the call, whatever the JWK.
+  if (algorithm !== undefined && !isAlgorithm(algorithm)) {
+    throw new JwtOptionError('algorithm', `Unsupported algorithm ${describeValue(algorithm)}.`);
+  }
   if (!isPlainObject(jwk)) {
     throw new JwtKeyError('importJWK expects a JWK object.');
   }
   const reason = unsupportedReason(jwk);
   if (reason !== null) {
     throw new JwtKeyError(`This JWK cannot be used for JWS signatures (${reason}).`);
-  }
-  if (algorithm !== undefined && !isAlgorithm(algorithm)) {
-    throw new JwtKeyError(`Unsupported algorithm ${describeValue(algorithm)}.`);
   }
   if (jwk.alg !== undefined && algorithm !== undefined && jwk.alg !== algorithm) {
     throw new JwtKeyError(`The JWK is for ${jwk.alg}, not ${algorithm}. A key is bound to exactly one algorithm.`);

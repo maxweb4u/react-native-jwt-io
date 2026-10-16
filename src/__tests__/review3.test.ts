@@ -266,8 +266,8 @@ describe('#8 an error message never turns into a TypeError', () => {
   it.each(strange.map((value) => [describeValue(value), value]))('algorithm %s', (_name, value) => {
     expect(() => verify(sign({}, SECRET_32), SECRET_32, { algorithm: value as never })).toThrow(code('ERR_JWT_OPTION_INVALID'));
     expect(() => sign({}, SECRET_32, { algorithm: value as never })).toThrow(code('ERR_JWT_OPTION_INVALID'));
-    expect(() => importPEM(pem(rsa.publicKey), value as never)).toThrow(code('ERR_JWT_KEY_INVALID'));
-    expect(() => importJWK(jwkOf(ec.publicKey), value as never)).toThrow(code('ERR_JWT_KEY_INVALID'));
+    expect(() => importPEM(pem(rsa.publicKey), value as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => importJWK(jwkOf(ec.publicKey), value as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('use and key_ops of any type', () => {

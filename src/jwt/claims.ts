@@ -25,6 +25,9 @@ export interface ClaimRules {
  */
 export function claimRules(options: VerifyOptions): ClaimRules {
   const maxAge = durationOption(options.maxTokenAge, 'maxTokenAge');
+  if (maxAge === 0) {
+    throw new JwtOptionError('maxTokenAge', '"maxTokenAge" is 0 seconds: every token would be too old. Give a positive duration.');
+  }
   if (options.subject !== undefined && typeof options.subject !== 'string') {
     throw new JwtOptionError('subject', 'The "subject" option must be a string.');
   }
@@ -35,11 +38,12 @@ export function claimRules(options: VerifyOptions): ClaimRules {
     now: currentSeconds(options.now),
     tolerance: clockToleranceOption(options.clockTolerance),
     maxTokenAge: maxAge === undefined ? undefined : { seconds: maxAge, label: options.maxTokenAge as Duration },
-    issuers: options.issuer === undefined ? undefined : stringList(options.issuer, 'issuer'),
-    audiences: options.audience === undefined ? undefined : stringList(options.audience, 'audience'),
+    // Not empty: an empty list would refuse every token, as if the token were at fault.
+    issuers: options.issuer === undefined ? undefined : stringList(options.issuer, 'issuer', { nonEmpty: true }),
+    audiences: options.audience === undefined ? undefined : stringList(options.audience, 'audience', { nonEmpty: true }),
     subject: options.subject,
     typ: options.typ,
-    requiredClaims: stringList(options.requiredClaims ?? [], 'requiredClaims'),
+    requiredClaims: options.requiredClaims === undefined ? [] : stringList(options.requiredClaims, 'requiredClaims'),
     ignoreExpiration: booleanOption(options.ignoreExpiration, 'ignoreExpiration'),
     ignoreNotBefore: booleanOption(options.ignoreNotBefore, 'ignoreNotBefore'),
   };
@@ -63,12 +67,15 @@ export function validateClaims(header: JwtHeader, payload: JwtPayload, rules: Cl
     throw new JwtNotBeforeError(`The token is not valid before ${fromNumericDate(nbf).toISOString()}.`, fromNumericDate(nbf));
   }
   const iat = numericClaim(payload, 'iat');
-  if (iat !== undefined && iat > now + tolerance) {
-    throw new JwtClaimError('iat', 'The token was issued in the future ("iat" is later than now).');
-  }
+  // iat is only checked when the caller asks for an age limit, as in jose:
+  // a device clock a few seconds behind the issuer's would otherwise refuse
+  // every fresh token, and exp and nbf already bound the token's validity.
   if (rules.maxTokenAge !== undefined) {
     if (iat === undefined) {
       throw new JwtClaimError('iat', '"maxTokenAge" was given, but the token has no "iat".');
+    }
+    if (iat > now + tolerance) {
+      throw new JwtClaimError('iat', 'The token was issued in the future ("iat" is later than now).');
     }
     // Like exp: at exactly iat + maxTokenAge the token is too old.
     const until = iat + rules.maxTokenAge.seconds;
@@ -187,11 +194,14 @@ export function durationOption(value: Duration | undefined, name: string): numbe
 }
 
 /** An option that is a string or an array of strings, as an array; anything else is a caller error. */
-export function stringList(value: unknown, name: string): readonly string[] {
+export function stringList(value: unknown, name: string, { nonEmpty = false } = {}): readonly string[] {
   if (typeof value === 'string') {
     return [value];
   }
   if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    if (nonEmpty && value.length === 0) {
+      throw new JwtOptionError(name, `"${name}" is an empty list, which no token could match. Leave it out, or name at least one.`);
+    }
     return value as string[];
   }
   throw new JwtOptionError(name, `"${name}" must be a string or an array of strings.`);

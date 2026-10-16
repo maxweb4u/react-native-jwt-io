@@ -33,43 +33,51 @@ const SIGN_OPTIONS = [
  * are seconds; a value that looks like milliseconds is refused.
  */
 export function sign(payload: object, key: KeyInput, options: SignOptions = {}): string {
+  // Options first, whatever the payload and the key: a mistake in the call is
+  // a JwtOptionError, not hidden behind a payload or key error.
   const opts: SignOptions = options ?? {};
   assertKnownOptions(opts, SIGN_OPTIONS);
   assertAlgorithmOption(opts.algorithm);
   const allowShortSecret = booleanOption(opts.allowShortSecret, 'allowShortSecret');
   const noTimestamp = booleanOption(opts.noTimestamp, 'noTimestamp');
+  const now = Math.floor(currentSeconds(opts.now));
+  if (now > MAX_PLAUSIBLE_NUMERIC_DATE) {
+    throw new JwtOptionError('now', `The "now" option is ${now} seconds since 1970, which no signing time can be.`);
+  }
+  const expiresIn = durationOption(opts.expiresIn, 'expiresIn');
+  const notBefore = durationOption(opts.notBefore, 'notBefore');
+  const issuer = stringOption(opts.issuer, 'issuer');
+  const subject = stringOption(opts.subject, 'subject');
+  const jwtId = stringOption(opts.jwtId, 'jwtId');
+  const audience = audienceOption(opts.audience);
+  const keyId = stringOption(opts.keyId, 'keyId');
+  const extraHeader = headerOption(opts.header);
+
   if (!isPlainObject(payload)) {
     throw new JwtClaimError('payload', 'The payload must be a plain object.');
   }
+  const claims: Record<string, unknown> = { ...payload };
+  // The payload as given, before options add to it: a bad aud or a
+  // millisecond iat is the payload's fault, whatever the options say.
+  validateRegisteredClaims(claims);
+  assertPlausibleTimes(claims);
+
   const resolved = resolveKey(key, opts.algorithm);
   assertSecretStrength(resolved, allowShortSecret);
-  const claims: Record<string, unknown> = { ...payload };
 
-  const now = Math.floor(currentSeconds(opts.now));
   if (claims.iat === undefined && !noTimestamp) {
     claims.iat = now;
   }
   const base = typeof claims.iat === 'number' ? claims.iat : now;
-  setRelative(claims, 'exp', base, durationOption(opts.expiresIn, 'expiresIn'), 'expiresIn');
-  setRelative(claims, 'nbf', base, durationOption(opts.notBefore, 'notBefore'), 'notBefore');
-  setOnce(claims, 'iss', stringOption(opts.issuer, 'issuer'), 'issuer');
-  setOnce(claims, 'sub', stringOption(opts.subject, 'subject'), 'subject');
-  setOnce(claims, 'jti', stringOption(opts.jwtId, 'jwtId'), 'jwtId');
-  setOnce(claims, 'aud', audienceOption(opts.audience), 'audience');
+  setRelative(claims, 'exp', base, expiresIn, 'expiresIn');
+  setRelative(claims, 'nbf', base, notBefore, 'notBefore');
+  setOnce(claims, 'iss', issuer, 'issuer');
+  setOnce(claims, 'sub', subject, 'subject');
+  setOnce(claims, 'jti', jwtId, 'jwtId');
+  setOnce(claims, 'aud', audience, 'audience');
 
-  if (opts.header !== undefined && !isPlainObject(opts.header)) {
-    throw new JwtOptionError('header', 'options.header must be a plain object.');
-  }
-  const header: Record<string, unknown> = { alg: resolved.algorithm, typ: 'JWT' };
-  for (const [name, value] of Object.entries(opts.header ?? {})) {
-    if (RESERVED_HEADER.includes(name)) {
-      throw new JwtOptionError(`header.${name}`, `The header "${name}" cannot be set through options.header.`);
-    }
-    if (name !== '__proto__') {
-      header[name] = value;
-    }
-  }
-  const kid = stringOption(opts.keyId, 'keyId') ?? resolved.kid;
+  const header: Record<string, unknown> = { alg: resolved.algorithm, typ: 'JWT', ...extraHeader };
+  const kid = keyId ?? resolved.kid;
   if (kid !== undefined) {
     header.kid = kid;
   }
@@ -97,15 +105,7 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
     throw new JwtClaimError('payload', 'The payload does not serialize to a JSON object (a toJSON method?).');
   }
   validateRegisteredClaims(payloadEcho);
-  for (const name of ['exp', 'nbf', 'iat'] as const) {
-    const value = payloadEcho[name];
-    if (typeof value === 'number' && value > MAX_PLAUSIBLE_NUMERIC_DATE) {
-      throw new JwtClaimError(
-        name,
-        `"${name}" is ${value}, which looks like milliseconds or an overflow. JWT times are seconds: use Math.floor(Date.now() / 1000).`,
-      );
-    }
-  }
+  assertPlausibleTimes(payloadEcho);
 
   const signingInput = `${base64UrlEncode(utf8Encode(headerText))}.${base64UrlEncode(utf8Encode(payloadText))}`;
   const signature = signBytes(resolved.algorithm, resolved.material, utf8Encode(signingInput));
@@ -125,7 +125,24 @@ function setRelative(
   if (claims[name] !== undefined) {
     throw new JwtOptionError(option, `Both payload.${name} and options.${option} are set; use one.`);
   }
-  claims[name] = base + offset;
+  const value = base + offset;
+  if (value > MAX_PLAUSIBLE_NUMERIC_DATE) {
+    throw new JwtOptionError(option, `options.${option} puts "${name}" at ${value} seconds since 1970, past any plausible date.`);
+  }
+  claims[name] = value;
+}
+
+/** iat first: a millisecond iat also pushes the exp and nbf computed from it. */
+function assertPlausibleTimes(claims: Record<string, unknown>): void {
+  for (const name of ['iat', 'exp', 'nbf'] as const) {
+    const value = claims[name];
+    if (typeof value === 'number' && value > MAX_PLAUSIBLE_NUMERIC_DATE) {
+      throw new JwtClaimError(
+        name,
+        `"${name}" is ${value}, which looks like milliseconds or an overflow. JWT times are seconds: use Math.floor(Date.now() / 1000).`,
+      );
+    }
+  }
 }
 
 function setOnce(claims: Record<string, unknown>, name: string, value: unknown, option: string): void {
@@ -149,7 +166,28 @@ function audienceOption(value: unknown): string | string[] | undefined {
   if (value === undefined || typeof value === 'string') {
     return value;
   }
-  return [...stringList(value, 'audience')];
+  // Not empty: verify refuses an empty audience list, so a token with aud [] could never be accepted.
+  return [...stringList(value, 'audience', { nonEmpty: true })];
+}
+
+/** options.header: a plain object without the parameters only the library sets. */
+function headerOption(value: unknown): Record<string, unknown> {
+  if (value === undefined) {
+    return {};
+  }
+  if (!isPlainObject(value)) {
+    throw new JwtOptionError('header', 'options.header must be a plain object.');
+  }
+  const header: Record<string, unknown> = {};
+  for (const [name, parameter] of Object.entries(value)) {
+    if (RESERVED_HEADER.includes(name)) {
+      throw new JwtOptionError(`header.${name}`, `The header "${name}" cannot be set through options.header.`);
+    }
+    if (name !== '__proto__') {
+      header[name] = parameter;
+    }
+  }
+  return header;
 }
 
 /** The header comes from options, the payload is claims: each failure is reported as what it is. */

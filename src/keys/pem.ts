@@ -59,11 +59,12 @@ export function importPEM(pem: string, algorithm: Algorithm, options: ImportOpti
   if (kid !== undefined && typeof kid !== 'string') {
     throw new JwtOptionError('kid', 'The "kid" option must be a string.');
   }
+  // The algorithm argument first: naming no algorithm is a mistake in the call, whatever the PEM.
+  if (!isAlgorithm(algorithm)) {
+    throw new JwtOptionError('algorithm', `importPEM needs the key's algorithm, such as 'RS256' or 'ES256'; got ${describeValue(algorithm)}.`);
+  }
   if (typeof pem !== 'string') {
     throw new JwtKeyError('importPEM expects the PEM text as a string.');
-  }
-  if (!isAlgorithm(algorithm)) {
-    throw new JwtKeyError(`importPEM needs the key's algorithm, such as 'RS256' or 'ES256'; got ${describeValue(algorithm)}.`);
   }
   if (algorithm.startsWith('HS')) {
     throw new JwtKeyError('HMAC secrets are not PEM keys. Pass the secret itself as a string or Uint8Array.');

@@ -118,10 +118,15 @@ describe('verify: time claims (SC-5)', () => {
     expect(() => verify(token, SECRET_32, { now: at(T + 110), clockTolerance: 10 })).toThrow(code('ERR_JWT_EXPIRED'));
   });
 
-  it('refuses a token issued in the future', () => {
+  it('refuses a token issued in the future when maxTokenAge asks for its age', () => {
     const future = sign({}, SECRET_32, { now: at(T + 60) });
-    expect(() => verify(future, SECRET_32, { now: at(T) })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(verify(future, SECRET_32, { now: at(T), clockTolerance: 60 }).payload.iat).toBe(T + 60);
+    expect(() => verify(future, SECRET_32, { now: at(T), maxTokenAge: '1h' })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(verify(future, SECRET_32, { now: at(T), maxTokenAge: '1h', clockTolerance: 60 }).payload.iat).toBe(T + 60);
+  });
+
+  it('accepts a future iat without maxTokenAge, as jose does: a device clock behind the issuer is common', () => {
+    const fresh = sign({}, SECRET_32, { now: at(T + 5), expiresIn: 60 });
+    expect(verify(fresh, SECRET_32, { now: at(T) }).payload.iat).toBe(T + 5);
   });
 
   it('enforces maxTokenAge from iat, and requires iat for it', () => {

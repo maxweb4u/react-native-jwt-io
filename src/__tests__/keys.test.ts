@@ -42,7 +42,7 @@ describe('importPEM', () => {
 
   it('needs the algorithm (SC-2)', () => {
     // @ts-expect-error the algorithm is required
-    expect(() => importPEM(pem(rsa.publicKey))).toThrow(code('ERR_JWT_KEY_INVALID'));
+    expect(() => importPEM(pem(rsa.publicKey))).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('refuses RSA keys below 2048 bits (SC-12)', () => {

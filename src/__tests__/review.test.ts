@@ -255,8 +255,8 @@ describe('#15 results and constants are frozen', () => {
 
 describe('#16 computed times are checked like given ones', () => {
   it('refuses an expiresIn that overflows into an implausible exp', () => {
-    // The longest duration accepted, added to now, is past the plausible range.
-    expect(() => sign({}, SECRET_32, { expiresIn: 1e11 })).toThrow(expect.objectContaining({ claim: 'exp' }));
+    // The longest duration accepted, added to now, is past the plausible range: the option's fault.
+    expect(() => sign({}, SECRET_32, { expiresIn: 1e11 })).toThrow(expect.objectContaining({ option: 'expiresIn' }));
     expect(() => sign({}, SECRET_32, { expiresIn: 1e300 })).toThrow(expect.objectContaining({ option: 'expiresIn' }));
   });
 });

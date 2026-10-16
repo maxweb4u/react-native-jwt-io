@@ -17,7 +17,10 @@ import { isKeyDer } from './pem';
  * - DER of a key, certificate or PKCS#7, an SSH wire blob, a raw EC point;
  * - each as bytes, or as base64, base64url, hex (`0x`, colons) or Latin-1
  *   text; with a UTF-8 or UTF-16 encoding, literal `\n` escapes, JSON quotes,
- *   URL encoding, or base64 of any of these (as Kubernetes secrets hold them).
+ *   URL encoding, or base64 of any of these (as Kubernetes secrets hold them);
+ * - text dumps tools write: .NET `RSAKeyValue` XML, a JWK as YAML or TOML,
+ *   `openssl … -text` output, DER as a list of decimal bytes (added after the
+ *   review of 2026-10-17).
  *
  * Measured against 425 forms of six key types and 520,000 generated secrets on
  * 2026-10-16: what is left undetected cannot be told from random bytes (a bare
@@ -35,6 +38,18 @@ const PEM_ARMOR = /[-‐-―−]{3}[ \t]*(?:BEGIN|END)[ \t]+[A-Z0-9]/i;
 const SSH_PUBLIC_KEY =
   /(?:^|\s)(?:ssh-(?:rsa|dss|ed25519|ed448)|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9-]+@openssh\.com)(?:-cert-v01@openssh\.com)?\s+AAAA/;
 const JWK_MEMBER = /[{,]\s*['"]?kty['"]?\s*:/;
+// The same members as YAML or TOML lines. `[ \t]*`, not `\s*`: across lines it would be quadratic.
+const JWK_LINE = /^[ \t]*['"]?kty['"]?[ \t]*[:=]/m;
+const JWK_MODULUS_LINE = /^[ \t]*['"]?n['"]?[ \t]*[:=][ \t]*['"]?[A-Za-z0-9+/_-]{64}/m;
+const JWK_EXPONENT_LINE = /^[ \t]*['"]?e['"]?[ \t]*[:=]/m;
+const JWK_CURVE_LINE = /^[ \t]*['"]?crv['"]?[ \t]*[:=]/m;
+const JWK_X_LINE = /^[ \t]*['"]?x['"]?[ \t]*[:=]/m;
+// .NET RSA.ToXmlString and its EC/DSA relatives.
+const XML_KEY = /<[ \t]*(?:RSAKeyValue|DSAKeyValue|ECDSAKeyValue|Modulus)[ \t]*>/i;
+// `openssl rsa|ec|pkey -text`: "Public-Key: (2048 bit)", "ED25519 Public-Key:", then the numbers.
+const OPENSSL_TEXT = /(?:Public|Private)-Key:[ \t]*(?:\(\d+ bit|$)/m;
+// DER as decimal bytes, as JSON.stringify(Array.from(bytes)) or a comma list writes it.
+const DECIMAL_BYTES = /^\[?[ \t\r\n]*\d{1,3}(?:[ \t\r\n]*,[ \t\r\n]*\d{1,3}){15,}[ \t\r\n]*\]?$/;
 const BASE64ISH = /^[A-Za-z0-9+/_-]+={0,2}$/;
 const HEX = /^(?:[0-9a-fA-F]{2})+$/;
 
@@ -42,6 +57,7 @@ const PEM = "A PEM key was passed as a secret. Import it with importPEM(pem, 'RS
 const SSH = 'An OpenSSH public key was passed as a secret. Convert it (ssh-keygen -e -m PKCS8 -f key.pub) and import it with importPEM';
 const JWK = 'A JWK was passed as a secret. Parse it and import it with importJWK(jwk)';
 const DER = 'A binary or encoded public key was passed as a secret. Import it with importPEM or importJWK';
+const DUMP = 'A key in a text dump (XML, YAML, TOML or openssl -text) was passed as a secret. Export it as PEM or JWK and import it with importPEM or importJWK';
 
 function inspect(key: string | Uint8Array, depth: number): string | null {
   const texts: string[] = [];
@@ -82,6 +98,15 @@ function inspectText(text: string, depth: number): string | null {
   }
   if (JWK_MEMBER.test(text) || jsonCarriesKey(text, depth)) {
     return JWK;
+  }
+  if (
+    XML_KEY.test(text) ||
+    OPENSSL_TEXT.test(text) ||
+    JWK_LINE.test(text) ||
+    (JWK_MODULUS_LINE.test(text) && JWK_EXPONENT_LINE.test(text)) ||
+    (JWK_CURVE_LINE.test(text) && JWK_X_LINE.test(text))
+  ) {
+    return DUMP;
   }
   for (const bytes of decodings(text)) {
     if (bytesAreKey(bytes)) {
@@ -131,6 +156,13 @@ function decodings(text: string): Uint8Array[] {
   const hex = text.trim().replace(/^0x/i, '').replace(/\\x|[:\s]/gi, '');
   if (HEX.test(hex)) {
     out.push(hexToBytes(hex));
+  }
+  const trimmed = text.trim();
+  if (DECIMAL_BYTES.test(trimmed)) {
+    const values = trimmed.replace(/[[\]\s]/g, '').split(',').map(Number);
+    if (values.every((value) => value <= 255)) {
+      out.push(Uint8Array.from(values));
+    }
   }
   const compact = text.replace(/\s+/g, '');
   if (BASE64ISH.test(compact)) {
