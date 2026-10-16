@@ -13,7 +13,8 @@
       "react-native": "./src/index.ts",
       "node": "./lib/commonjs/index.js",
       "import": "./lib/module/index.js",
-      "require": "./lib/commonjs/index.js"
+      "require": "./lib/commonjs/index.js",
+      "default": "./lib/commonjs/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -29,7 +30,7 @@
     "./lib/*/host/hostCheck.js"
   ],
   "engines": {
-    "node": ">=20.19.0"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
     "build": "npm run build:cjs && npm run build:esm && npm run build:types",

@@ -8,6 +8,7 @@
  * checker nor Jest (which transforms them) can see.
  */
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -38,4 +39,14 @@ const esm = spawnSync(
 );
 assert.equal(esm.status, 0, `Node ESM default import: ${esm.stderr || `exit ${esm.status}`}`);
 
-console.log(`check-build: lib/commonjs loads, round-trips and keeps the 1.x tombstones (require, ESM) on Node ${process.version}`);
+// lib/module is for bundlers (its imports are extensionless, so Node cannot
+// load it) and lib/typescript for the type checker: check they were built,
+// and that the host check is still the first thing the ES build imports.
+const esmIndex = fs.readFileSync(path.join(root, 'lib/module/index.js'), 'utf8');
+assert.match(esmIndex.split('\n').find((line) => line.startsWith('import')) ?? '', /^import '\.\/host\/hostCheck';/);
+const declarations = fs.readFileSync(path.join(root, 'lib/typescript/index.d.ts'), 'utf8');
+for (const name of ['sign', 'verify', 'decodeUnverified', 'importPEM', 'importJWK', 'createJWKS']) {
+  assert.match(declarations, new RegExp(`\\b${name}\\b`), `lib/typescript/index.d.ts does not export ${name}`);
+}
+
+console.log(`check-build: lib/commonjs loads, round-trips and keeps the 1.x tombstones (require, ESM); lib/module and lib/typescript are complete; Node ${process.version}`);
