@@ -48,6 +48,12 @@ Requirements:
   once, first in your entry file — before this library, which checks for it
   when it loads. Nothing else needs it; without it, PS* signing throws
   `JwtHostRequirementError` naming the package.
+- **Expo:** works in **Expo Go** and in development builds — there is no native
+  code, so no config plugin and no prebuild. Install with
+  `npx expo install react-native-jwt-io@next`, and for PS* signing
+  `npx expo install react-native-get-random-values`, imported first as above;
+  Expo Go includes it. Run with Expo SDK 58 (React Native 0.88) in Expo Go on an
+  Android phone and an iOS simulator, development and minified bundles.
 - Node 20.19+ or 22.12+ works too (CommonJS and ESM): the CommonJS build loads
   the ES-module-only crypto packages with `require()`.
 - **Jest in your app:** the crypto packages are ES modules only, so let Jest

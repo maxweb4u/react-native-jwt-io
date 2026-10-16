@@ -28,6 +28,11 @@ From the last pass over the public API before 2.0.0; breaking against
 - `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload & T`:
   `exp`, `sub` and the other registered claims stay typed whatever `T` is.
 
+### Documented
+
+- Works in Expo Go and in Expo development builds, with no config plugin:
+  checked with Expo SDK 58 on Android and iOS.
+
 ### Fixed
 
 - `createJWKS(set, { algorithm: 'RS999' })` skipped every key the option
