@@ -4,7 +4,7 @@
     // es2020 on purpose: it is the newest library whose runtime APIs every
     // supported Hermes has. A newer `lib` would let `Object.hasOwn` or
     // `Array.prototype.at` type-check here and crash on an older device.
-    // See memory_bank/adr/ADR-005-host-requirements.md.
+    // See memory_bank/adr/ADR-007-host-requirements-text-encoder.md.
     "lib": ["es2020"],
     "module": "es2020",
     "moduleResolution": "bundler",

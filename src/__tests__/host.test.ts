@@ -33,7 +33,33 @@ describe('host requirements (SC-17)', () => {
     expect(error.code).toBe('ERR_JWT_HOST_REQUIREMENT');
     expect(error.feature).toBe('Object.hasOwn');
     expect(error.message).toMatch(/polyfill/);
-    expect(error.message).toMatch(/0\.71/);
+    expect(error.message).toMatch(/0\.74/);
+  });
+
+  it('names TextEncoder, which noble calls while it loads (Hermes before React Native 0.74)', () => {
+    const error = importWithout(globalThis, 'TextEncoder') as { code: string; feature: string; message: string };
+    expect(error).toEqual(expect.objectContaining({ code: 'ERR_JWT_HOST_REQUIREMENT', feature: 'TextEncoder' }));
+    expect(error.message).toMatch(/0\.74/);
+  });
+
+  it('the TextEncoder check is needed: without it, noble fails while loading', () => {
+    // Guards the reason for the check — if a noble update stops calling
+    // TextEncoder at load, the requirement (and the React Native floor) can drop.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'TextEncoder') as PropertyDescriptor;
+    delete (globalThis as Record<string, unknown>).TextEncoder;
+    try {
+      let thrown: unknown;
+      jest.isolateModules(() => {
+        try {
+          require('@noble/curves/ed25519.js');
+        } catch (error) {
+          thrown = error;
+        }
+      });
+      expect(String(thrown)).toMatch(/TextEncoder/);
+    } finally {
+      Object.defineProperty(globalThis, 'TextEncoder', descriptor);
+    }
   });
 
   it('names a Babel setup that rewrites ** into Math.pow (React Native 0.70)', () => {
@@ -98,11 +124,7 @@ describe('1.x tombstones (SC-15)', () => {
   });
 
   it('errors are JwtError subclasses with instanceof intact', () => {
-    try {
-      jwt.encode();
-    } catch (error) {
-      expect(error).toBeInstanceOf(JwtError);
-      expect((error as JwtError).name).toBe('JwtMigrationError');
-    }
+    expect(() => jwt.encode()).toThrow(JwtError);
+    expect(() => jwt.encode()).toThrow(expect.objectContaining({ name: 'JwtMigrationError' }));
   });
 });
