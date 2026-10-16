@@ -34,6 +34,7 @@ What stands between the built code (stages 1–6, 2026-10-15) and the release.
 | W-7 | ~~Expo Go~~ — done 2026-10-16: the packed library runs in Expo Go unchanged — 16/16 with Expo SDK 58 (React Native 0.88) on the Realme RMX3363 (development and minified bundles; random values from `react-native-get-random-values`, which Expo Go includes, or from `expo-crypto`) and on an iOS 27 simulator. No code change was needed; the README says so under Installation. How to repeat it: [engineering/testing-policy.md](engineering/testing-policy.md). It answers "why not `jose` with `react-native-quick-crypto`?" — that pair is faster, but it is a native module, which Expo Go cannot load. |
 | W-8 | ~~"When you do not need this library"~~ — done 2026-10-17: a README section after Performance — `jwt-decode` for reading your own tokens, no device-side verification of a token your own server checks, `jose` with `react-native-quick-crypto` when a native module is acceptable and speed matters; then what this library is for. |
 | W-9 | **Remote JWKS** — the 2.1 feature ([product/roadmap.md](product/roadmap.md#after-200)), raised again on 2026-10-16 as the most common on-device need: verifying tokens from a provider (Auth0, Keycloak, Firebase) against its JWKS. Today the caller fetches the key set and passes it to `createJWKS`. Not a 2.0.0 blocker. |
+| W-10 | **`alg: "Ed25519"` (RFC 9864)** — accept the fully-specified name besides `EdDSA`, in tokens and JWKs, and decide how a key bound to one relates to the other ([ADR-003](adr/ADR-003-one-key-one-algorithm.md)). Until then such a JWK is listed in `skipped` with the reason. Found by the review of 2026-10-17; for 2.1, additive. |
 
 ## Review of 2026-10-15
 
@@ -144,6 +145,27 @@ The last pass over the public surface (`src/index.ts`, the option types, the err
 
 Kept as they are, each extensible in a minor release: the function names and option names (aligned with `jose` and `jsonwebtoken`), `hexToBytes` (1.x migration), `importJWK(jwk, algorithm?)` without an options argument, `now` as a `Date` only, `audience` as strings only, PEM without X.509 certificates, no key export or generation. Remote JWKS (2.1) fits the synchronous `verify`: fetching returns an ordinary `JwtKeySet`. The `types` condition comes first in `exports`, so TypeScript with `customConditions: ["react-native"]` reads the declarations, not the `.ts` sources.
 
+## Review of 2026-10-17
+
+Two independent passes (separate agents, adversarial, read-only) before `2.0.0-rc.0`: one over everything changed since `2.0.0-alpha.0`, one over the whole library. No accepted forgery with a correctly imported key; interop with Node's `crypto` 660/660 tokens both ways (RSA moduli of odd lengths included); 25,000 fuzzed JWKs and headers raised nothing but `JwtError`s. Regressions in `src/__tests__/review4.test.ts`, numbered like this table. After the fixes, `example/` read 16/16 on the Realme RMX3363 and the iOS 18.3 simulator, Release builds; blinding's cost is in [engineering/performance.md](engineering/performance.md).
+
+| # | Finding | Severity | Outcome |
+|-|-|-|-|
+| 1 | `sign` reported an option out of range (`expiresIn: 1e11 - 1000`, `now: new Date(2e14)`) as a millisecond `exp`/`iat` claim | wrong error class | `JwtOptionError` naming the option; a millisecond `iat` in the payload is named before the `exp` computed from it |
+| 2 | `requiredClaims: null` switched the check off; no test pinned `requiredClaims: 5` | fail-open (caller), test gap | an error; the string form is pinned |
+| 3 | `issuer: []`, `audience: []`, `maxTokenAge: 0` refused every token as the token's fault; `sign` issued `aud: []` | wrong error class | `JwtOptionError` |
+| 4 | `sign` checked the payload and the key before its options, hiding mistakes in them | wrong error class | options first |
+| 5 | `sign({ aud: null }, key, { audience })` blamed the option | misattribution | the payload's registered claims are checked first |
+| 6 | An unknown `algorithm` argument to `importPEM`/`importJWK` was a `JwtKeyError`, elsewhere a `JwtOptionError` | inconsistency | `JwtOptionError`, before the key is read |
+| 7 | `JwtPayload & T` let `T` contradict a registered claim (`exp: Date` compiled and failed at run time) and lost `readonly` | type | `T extends PayloadShape<T>`, `Readonly<T>`; `PayloadShape` exported |
+| 8 | Public-key dumps that tools write were accepted as HMAC secrets: .NET XML, JWK as YAML/TOML, `openssl -text`, DER as decimal bytes | medium, forgery (caller misconfiguration) | refused ([domain/keys.md](domain/keys.md#inputs)) |
+| 9 | RSA signing ran unblinded: `micro-rsa-dsa-dh` blinds only when given `e` | low, timing side channel | blinded when `getRandomValues` exists, unblinded otherwise ([domain/keys.md](domain/keys.md#rsa-blinding)) |
+| 10 | An unverified token's `alg` and `kid` reached error messages raw: a newline or ANSI escape could forge a log line | low, log injection | escaped with `describeValue` |
+| 11 | A JWK with `alg: "Ed25519"` (RFC 9864) dropped out of a key set silently | interop | listed in `skipped` with the reason; support is W-10 |
+| 12 | A future `iat` was refused with `clockTolerance` 0: a device clock two seconds behind refused every fresh token | interop | checked only with `maxTokenAge`, as in `jose` ([ADR-009](adr/ADR-009-future-iat.md)); README advises `clockTolerance` on devices |
+| 13 | The README said the library checks for `getRandomValues` when it loads; it checks at PS* signing | docs | corrected |
+| 14 | Mutants surviving in the new option code: options moved after `parseToken`, a non-list `requiredClaims` read as none, a header serialization error's class, the option named by a claim set twice, an inherited option's name | test gap | a test each in `review4.test.ts` (#13) and `apiFreeze.test.ts` |
+
 ## Decided
 
 | ID | Decision | Outcome | Record |
@@ -155,6 +177,7 @@ Kept as they are, each extensible in a minor release: the function names and opt
 | OD-5 | Minimum React Native version | No `react-native` peer; the floor is the lowest React Native whose Hermes has every feature the code needs (`BigInt`, `Object.hasOwn`, `TextEncoder`), measured — 0.74; runtime host check with `JwtHostRequirementError`; Hermes only. Accepted 2026-10-15, floor corrected 2026-10-16 | [ADR-007](adr/ADR-007-host-requirements-text-encoder.md), superseding ADR-005 |
 | OD-6 | Ship 1.0.4 first | Yes: `jsrsasign` ^11.1.5, a `files` field so the memory bank is not published, `CHANGELOG.md`, a README note on 2.0.0 and the 1.0.x window. Accepted and published 2026-10-15 | [product/roadmap.md](product/roadmap.md) |
 | OD-7 | Option errors and payload generics | A mistake in the call is `JwtOptionError`, checked before the token is read; switches must be booleans; `payload: JwtPayload & T`. Accepted 2026-10-16, after `2.0.0-alpha.0` | [ADR-008](adr/ADR-008-option-errors.md) |
+| OD-8 | Future `iat`, RSA blinding, `alg: "Ed25519"`, payload type constraint | Future `iat` only with `maxTokenAge`; RSA blinding when a random source exists; `Ed25519` reported in `skipped`, supported in 2.1; `T extends PayloadShape<T>`. Accepted 2026-10-17 | [ADR-009](adr/ADR-009-future-iat.md), [domain/keys.md](domain/keys.md#rsa-blinding) |
 
 ## Defects in the 1.0.x line
 

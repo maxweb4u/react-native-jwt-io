@@ -6,8 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [2.0.0-rc.0] — 2026-10-17
 
-The release candidate. From the last pass over the public API before 2.0.0;
-breaking against `2.0.0-alpha.0`.
+The release candidate. From the last pass over the public API before 2.0.0
+and the review that followed it; breaking against `2.0.0-alpha.0`.
 
 ### Added
 
@@ -15,18 +15,31 @@ breaking against `2.0.0-alpha.0`.
   the call — an unknown option, or one of the wrong type or out of range — in
   every function that takes options. An app can now tell a bug in its own
   code from a bad token.
+- `PayloadShape<T>`, to pass a payload type through a generic of your own.
 
 ### Changed
 
 - Option mistakes that were `JwtClaimError` (from `sign`, `verify`,
-  `isExpired`) or `JwtKeyError` (from `importPEM`, `createJWKS`) are
-  `JwtOptionError`. Problems in the token or the payload stay `JwtClaimError`.
+  `isExpired`) or `JwtKeyError` (from `importPEM`, `importJWK`, `createJWKS`)
+  are `JwtOptionError` — an unknown `algorithm` argument to `importPEM` and
+  `importJWK` too. Problems in the token or the payload stay `JwtClaimError`.
 - `verify` and `isExpired` check all their options before reading the token,
-  so a bad token no longer hides a mistake in them.
+  and `sign` before the payload and the key, so neither hides a mistake in
+  them. An option no token could satisfy — `issuer: []`, `audience: []`,
+  `maxTokenAge: 0` — and an `expiresIn`, `notBefore` or `now` past any
+  plausible date are `JwtOptionError`.
+- A future `iat` is refused only when `maxTokenAge` is given, as in `jose`: a
+  device clock a few seconds behind the issuer's refused every fresh token.
+- RSA signing is blinded against timing attacks when `crypto.getRandomValues`
+  is available; without it, RS* signing works unblinded as before.
+- A JWK of a supported type with an `alg` this library does not know — such as
+  RFC 9864's `Ed25519` — is listed in the key set's `skipped` with the reason,
+  instead of being left out silently.
 - The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
   `noTimestamp` must be booleans; `'true'` was read as false.
-- `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload & T`:
-  `exp`, `sub` and the other registered claims stay typed whatever `T` is.
+- `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload &
+  Readonly<T>`: `exp`, `sub` and the other registered claims stay typed, and
+  `T` may narrow them but not change their type (`exp: Date` does not compile).
 
 ### Documented
 
@@ -40,6 +53,16 @@ breaking against `2.0.0-alpha.0`.
 
 - `createJWKS(set, { algorithm: 'RS999' })` skipped every key the option
   applied to; an unknown algorithm name is now refused.
+- `requiredClaims: null` switched the check off; it is now an error.
+- `sign({ aud: null }, key, { audience })` blamed the option, not the payload.
+
+### Security
+
+- A public key passed as an HMAC secret is refused in more forms tools write:
+  .NET `RSAKeyValue` XML, a JWK as YAML or TOML, `openssl -text` output, and
+  DER as a list of decimal bytes.
+- An unverified token's `alg` and `kid` are escaped in error messages, so they
+  cannot forge lines in an app's logs.
 
 ## [2.0.0-alpha.0] — 2026-10-16
 

@@ -19,7 +19,7 @@ canonical_for:
 
 ## Public types
 
-- Payload types flow through generics (`verify<MyClaims>()`) and are added to `JwtPayload` (`JwtPayload & MyClaims`), so the registered claims stay typed whatever the caller passes; the rest is `unknown` — never `any` ([ADR-008](../adr/ADR-008-option-errors.md)).
+- Payload types flow through generics (`verify<MyClaims>()`) and are added to `JwtPayload` (`JwtPayload & Readonly<MyClaims>`), so the registered claims stay typed whatever the caller passes; `T extends PayloadShape<T>` lets `T` narrow a registered claim but not change its type; the rest is `unknown` — never `any` ([ADR-008](../adr/ADR-008-option-errors.md)).
 - Results are `readonly`.
 - Algorithm names are a string-literal union exported as a `const` object plus a type under one name.
 - Byte data is `Uint8Array`. No `Buffer` in the public surface: Hermes has none.

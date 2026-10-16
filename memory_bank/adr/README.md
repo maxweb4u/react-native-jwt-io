@@ -19,5 +19,6 @@ One decision per record: context, decision, consequences. A record is never edit
 - [ADR-006 — Break from the 1.0.x API, with named tombstones](ADR-006-named-1x-tombstones.md) — `accepted`. ADR-004 restated, with `encode`/`decode` tombstones exported by name so `require()` and Node ESM default imports fail with a migration message too.
 - [ADR-007 — Host requirements, with TextEncoder](ADR-007-host-requirements-text-encoder.md) — `accepted`. ADR-005 restated: noble calls `TextEncoder` while it loads, so the floor is React Native 0.74, and the host check names `TextEncoder`.
 - [ADR-008 — Option errors are their own class](ADR-008-option-errors.md) — `accepted`. A mistake in the options is `JwtOptionError`, checked before the token is read; a payload generic adds to the registered claims.
+- [ADR-009 — A future iat is checked only with maxTokenAge](ADR-009-future-iat.md) — `accepted`. As in `jose`: a device clock behind the issuer's no longer refuses fresh tokens.
 
 Use the template at [../flows/templates/adr/adr.md](../flows/templates/adr/adr.md).

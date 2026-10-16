@@ -17,11 +17,13 @@ Target set for 2.0.0. Every row signs and verifies in pure JavaScript; the packa
 | `alg` | Family | Key | Implemented by | Needs `getRandomValues` to sign |
 |-|-|-|-|-|
 | HS256 / HS384 / HS512 | HMAC-SHA2 | secret ≥ hash length | `@noble/hashes` | no |
-| RS256 / RS384 / RS512 | RSASSA-PKCS1-v1_5 | RSA ≥ 2048 bits | `micro-rsa-dsa-dh` | no |
+| RS256 / RS384 / RS512 | RSASSA-PKCS1-v1_5 | RSA ≥ 2048 bits | `micro-rsa-dsa-dh` | no; used for blinding when present ([keys.md](keys.md#rsa-blinding)) |
 | PS256 / PS384 / PS512 | RSASSA-PSS, salt = hash length | RSA ≥ 2048 bits | `micro-rsa-dsa-dh` | **yes** |
 | ES256 / ES384 / ES512 | ECDSA P-256 / P-384 / P-521 | EC | `@noble/curves` | no (RFC 6979) |
 | ES256K | ECDSA secp256k1 (RFC 8812) | EC | `@noble/curves` | no (RFC 6979) |
 | EdDSA (Ed25519) | RFC 8037 | OKP | `@noble/curves` | no |
+
+RFC 9864 (2025) names Ed25519 signatures `Ed25519` and deprecates `EdDSA`. 2.0 accepts only `EdDSA`; a JWK with `alg: "Ed25519"` is listed in a key set's `skipped` with that reason. Accepting `Ed25519` is planned for 2.1 (backlog W-10).
 
 Verification never needs randomness. Signing with PS* on a host without `crypto.getRandomValues` throws a named error naming `react-native-get-random-values`.
 

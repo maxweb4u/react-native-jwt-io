@@ -44,10 +44,10 @@ A `JwtKey` is a frozen object with `algorithm`, `type` and optional `kid`; its m
 ```ts
 sign(payload, key, { algorithm?, allowShortSecret?, expiresIn?, notBefore?, issuer?, audience?, subject?,
                      jwtId?, keyId?, header?, noTimestamp?, now? }): string
-verify<T>(token, key | jwks, { algorithm?, allowShortSecret?, issuer?, audience?, subject?, typ?,
+verify<T extends PayloadShape<T>>(token, key | jwks, { algorithm?, allowShortSecret?, issuer?, audience?, subject?, typ?,
                                requiredClaims?, maxTokenAge?, clockTolerance?, ignoreExpiration?,
-                               ignoreNotBefore?, now? }): { header, payload: JwtPayload & T }
-decodeUnverified<T>(token): { header, payload: JwtPayload & T }
+                               ignoreNotBefore?, now? }): { header, payload: JwtPayload & Readonly<T> }
+decodeUnverified<T extends PayloadShape<T>>(token): { header, payload: JwtPayload & Readonly<T> }
 isExpired(token, { clockTolerance?, now? }): boolean
 getExpiration(token): Date | null
 importPEM(pem, algorithm, { kid? }): JwtKey

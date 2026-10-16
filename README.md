@@ -45,9 +45,11 @@ Requirements:
 - Signing with **PS256/384/512** needs `crypto.getRandomValues`, which Hermes
   lacks. Install [`react-native-get-random-values`](https://github.com/LinusU/react-native-get-random-values)
   (2.x needs React Native 0.81 or later; use 1.11 below that) and import it
-  once, first in your entry file — before this library, which checks for it
-  when it loads. Nothing else needs it; without it, PS* signing throws
-  `JwtHostRequirementError` naming the package.
+  once, first in your entry file, before this library: the crypto code decides
+  when it loads whether it can blind its computations. PS* signing checks for
+  it when called and, without it, throws `JwtHostRequirementError` naming the
+  package. Nothing else needs it; with it, RS* signing is blinded against
+  timing attacks too.
 - **Expo:** works in **Expo Go** and in development builds — there is no native
   code, so no config plugin and no prebuild. Install with
   `npx expo install react-native-jwt-io@next`, and for PS* signing
@@ -171,13 +173,18 @@ too; for a bare secret it also picks the HMAC), `issuer` (one or a list),
 
 `T` describes your own claims and is added to the registered ones: with
 `verify<{ roles: string[] }>`, both `payload.roles` and `payload.exp` are
-typed. Only the registered claims (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`,
-`jti`) are checked at run time; the rest of `T` is your assertion.
+typed, read-only. `T` may narrow a registered claim (`sub: string`) but not
+change its type: `exp: Date` does not compile. To pass `T` through a generic of
+your own, constrain it with `PayloadShape`:
+`<T extends PayloadShape<T>>`. Only the registered claims (`iss`, `sub`, `aud`,
+`exp`, `nbf`, `iat`, `jti`) are checked at run time; the rest of `T` is your
+assertion.
 
 Options are a plain object. An unknown option name is an error, not ignored: a
 misspelled `expiresin`, or jsonwebtoken's `maxAge`, would otherwise switch
 nothing on. So is a callback in place of options — nothing here takes one —
-and a switch such as `ignoreExpiration` that is not `true` or `false`.
+a switch such as `ignoreExpiration` that is not `true` or `false`, and an option
+no token could satisfy, such as `audience: []`.
 
 A token's `aud` is checked only when you pass `audience`. If your app accepts
 tokens from an issuer that serves several audiences, pass it.
@@ -185,6 +192,11 @@ tokens from an issuer that serves several audiences, pass it.
 Durations are seconds or strings: `'30s'`, `'15m'`, `'2.5h'`, `'7d'`, `'1 week'`,
 in whole seconds, rounded down. `clockTolerance` is at most a day: it is for
 clock skew; to accept expired tokens, say so with `ignoreExpiration`.
+
+Phone clocks drift. When you verify on a device, pass a `clockTolerance` of
+some seconds (`'30s'`), or a token's `nbf` can make it fail for its first
+moments. `iat` is compared with the clock only when you pass `maxTokenAge`, as
+in `jose`.
 
 `verify` and `decodeUnverified` return deeply frozen objects.
 
@@ -239,7 +251,7 @@ Measured on a mid-range Android phone (Realme RMX3363, 2021), Release build:
 | | verify | sign |
 |-|-|-|
 | HS256 | 0.9 ms | 0.8 ms |
-| RS256 / PS256 | 7.5 ms | 0.9 s (RS) |
+| RS256 / PS256 | 7.5 ms | 0.9–1 s |
 | ES256 | 60 ms | 14 ms |
 | EdDSA | 30 ms | 9 ms |
 
