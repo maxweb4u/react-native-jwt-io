@@ -25,8 +25,12 @@ const { payload } = verify(token, publicKey); // throws if the signature, exp or
 ## Installation
 
 ```sh
-npm install react-native-jwt-io
+npm install react-native-jwt-io@next
 ```
+
+2.0 is in alpha and published under the npm tag `next`; a plain
+`npm install react-native-jwt-io` still installs 1.0.4, whose API this README
+does not describe.
 
 Requirements:
 
