@@ -134,7 +134,7 @@ describe('#2 error names survive a minifier', () => {
   const errorClasses = Object.entries(api).filter(([name]) => /^Jwt\w*Error$/.test(name)) as [string, { prototype: object }][];
 
   it('every error class has its name as a string on its prototype, not taken from the class', () => {
-    expect(errorClasses).toHaveLength(11);
+    expect(errorClasses).toHaveLength(12);
     for (const [name, errorClass] of errorClasses) {
       expect([name, Object.getOwnPropertyDescriptor(errorClass.prototype, 'name')?.value]).toEqual([name, name]);
     }
@@ -158,7 +158,7 @@ describe('#3 clockTolerance is at most a day', () => {
 
   it.each([86401, '25h', '2d', 1e11, '165000w'])('refuses %p', (clockTolerance) => {
     expect(() => verify(expired, SECRET_32, { now: at(T + 1e9), clockTolerance })).toThrow(/the most is 86400/);
-    expect(() => isExpired(expired, { now: at(T + 1e9), clockTolerance })).toThrow(expect.objectContaining({ claim: 'clockTolerance' }));
+    expect(() => isExpired(expired, { now: at(T + 1e9), clockTolerance })).toThrow(expect.objectContaining({ option: 'clockTolerance' }));
   });
 
   it('accepts a day, and maxTokenAge keeps the long cap', () => {
@@ -231,7 +231,7 @@ describe('#7 options must be a plain object', () => {
     ['an object inheriting options', Object.create({ maxTokenAge: 1, algorithm: 'HS512' }), /not a plain object/],
   ])('verify refuses %s', (_name, options, message) => {
     expect(() => verify(token, SECRET_32, options as never)).toThrow(message);
-    expect(() => verify(token, SECRET_32, options as never)).toThrow(expect.objectContaining({ claim: 'options' }));
+    expect(() => verify(token, SECRET_32, options as never)).toThrow(expect.objectContaining({ option: 'options' }));
   });
 
   it('refuses an enumerable option on a null prototype', () => {
@@ -240,8 +240,8 @@ describe('#7 options must be a plain object', () => {
   });
 
   it('sign, isExpired, importPEM and createJWKS refuse non-objects too', () => {
-    expect(() => sign({}, SECRET_32, 'HS256' as never)).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(() => isExpired(token, 30 as never)).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, 'HS256' as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => isExpired(token, 30 as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
     expect(() => importPEM(pem(rsa.publicKey), 'RS256', 'kid' as never)).toThrow(/plain object/);
     expect(() => createJWKS({ keys: [] }, 'RS256' as never)).toThrow(/plain object/);
   });
@@ -264,8 +264,8 @@ describe('#8 an error message never turns into a TypeError', () => {
   });
 
   it.each(strange.map((value) => [describeValue(value), value]))('algorithm %s', (_name, value) => {
-    expect(() => verify(sign({}, SECRET_32), SECRET_32, { algorithm: value as never })).toThrow(code('ERR_JWT_ALGORITHM'));
-    expect(() => sign({}, SECRET_32, { algorithm: value as never })).toThrow(code('ERR_JWT_ALGORITHM'));
+    expect(() => verify(sign({}, SECRET_32), SECRET_32, { algorithm: value as never })).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => sign({}, SECRET_32, { algorithm: value as never })).toThrow(code('ERR_JWT_OPTION_INVALID'));
     expect(() => importPEM(pem(rsa.publicKey), value as never)).toThrow(code('ERR_JWT_KEY_INVALID'));
     expect(() => importJWK(jwkOf(ec.publicKey), value as never)).toThrow(code('ERR_JWT_KEY_INVALID'));
   });

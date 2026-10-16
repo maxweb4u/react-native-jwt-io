@@ -8,5 +8,5 @@ import { parseToken } from './parse';
  */
 export function decodeUnverified<TPayload = JwtPayload>(token: string): DecodedJwt<TPayload> {
   const { header, payload } = parseToken(token);
-  return Object.freeze({ header, payload: payload as TPayload });
+  return Object.freeze({ header, payload: payload as JwtPayload & TPayload });
 }

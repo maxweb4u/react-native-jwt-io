@@ -1,5 +1,5 @@
 import { ecPublicKeyFromPrivate, ed25519PublicKeyFromPrivate, EC_FIELD_BYTES, isValidEd25519PublicKey, normalizeEcPublicKey } from '../crypto/curves';
-import { JwtKeyError } from '../errors/errors';
+import { JwtKeyError, JwtOptionError } from '../errors/errors';
 import { type Algorithm, isAlgorithm } from '../types/algorithm';
 import { base64Decode } from '../utils/base64';
 import { equalBytes } from '../utils/bytes';
@@ -54,10 +54,10 @@ export interface ImportOptions {
  */
 export function importPEM(pem: string, algorithm: Algorithm, options: ImportOptions = {}): JwtKey {
   const opts: ImportOptions = options ?? {};
-  assertKnownOptions(opts, ['kid'], (_name, message) => new JwtKeyError(message));
+  assertKnownOptions(opts, ['kid']);
   const kid = opts.kid;
   if (kid !== undefined && typeof kid !== 'string') {
-    throw new JwtKeyError('The "kid" option must be a string.');
+    throw new JwtOptionError('kid', 'The "kid" option must be a string.');
   }
   if (typeof pem !== 'string') {
     throw new JwtKeyError('importPEM expects the PEM text as a string.');

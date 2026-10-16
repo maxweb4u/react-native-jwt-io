@@ -11,6 +11,8 @@ import jwt, {
   importJWK,
   importPEM,
   isExpired,
+  JwtError,
+  JwtOptionError,
   sign,
   verify,
 } from '../index';
@@ -62,4 +64,24 @@ it('Migrating from 1.x', () => {
   expect(() => jwt.encode()).toThrow(/sign\(payload, key, options\)/);
   const legacy = sign({ id: 'u1' }, hexToBytes('deadbeef'), { allowShortSecret: true });
   expect(verify(legacy, hexToBytes('deadbeef'), { allowShortSecret: true }).payload.id).toBe('u1');
+});
+
+it('Errors: keep JwtOptionError apart from a bad token', () => {
+  const rsa = nodeKeyPair('rsa');
+  const key = importPEM(pem(rsa.publicKey), 'RS256');
+  const signOut = () => 'signed out';
+  const check = (token: string, options: object) => {
+    try {
+      return verify(token, key, { issuer: 'https://auth.example.com', ...options });
+    } catch (error) {
+      if (error instanceof JwtOptionError) throw error; // a bug in the call: let it surface
+      if (error instanceof JwtError) return signOut(); // the token is not acceptable
+      throw error;
+    }
+  };
+  const good = nodeSign('RS256', rsa.privateKey, { iss: 'https://auth.example.com' });
+  const other = nodeSign('RS256', rsa.privateKey, { iss: 'https://elsewhere.example.com' });
+  expect(check(good, {})).toMatchObject({ payload: { iss: 'https://auth.example.com' } });
+  expect(check(other, {})).toBe('signed out');
+  expect(() => check(other, { maxAge: '1h' })).toThrow(JwtOptionError);
 });

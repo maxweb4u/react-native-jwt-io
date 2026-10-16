@@ -118,7 +118,7 @@ describe('error names', () => {
 
   it('K2:E5,E7,E8 name is described like Error.prototype.name: writable, configurable, not enumerable', () => {
     const { value: _value, ...expected } = Object.getOwnPropertyDescriptor(Error.prototype, 'name')!;
-    expect(errorClasses).toHaveLength(11);
+    expect(errorClasses).toHaveLength(12);
     for (const [name, errorClass] of errorClasses) {
       const { value, ...descriptor } = Object.getOwnPropertyDescriptor(errorClass.prototype, 'name')!;
       expect([name, value, descriptor]).toEqual([name, name, expected]);
@@ -219,7 +219,7 @@ describe('isExpired options', () => {
     expect(isExpired(token, null as never)).toBe(false);
   });
   it('K2:X3 an option isExpired does not use is refused', () => {
-    expect(() => isExpired(token, { maxAge: 10 } as never)).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(() => isExpired(token, { ignoreExpiration: true } as never)).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => isExpired(token, { maxAge: 10 } as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => isExpired(token, { ignoreExpiration: true } as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 });

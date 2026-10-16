@@ -5,6 +5,9 @@
  * See memory_bank/domain/validation.md#options.
  */
 
+import { JwtOptionError } from '../errors/errors';
+import { isAlgorithm } from '../types/algorithm';
+import { describeValue } from './describe';
 import { isPlainObject } from './json';
 
 function describeOptions(value: unknown): string {
@@ -36,13 +39,9 @@ const ELSEWHERE: Record<string, string> = {
  * a Map or a class instance would otherwise be read as "no options", and
  * options inherited through a prototype would apply without being checked.
  */
-export function assertKnownOptions(
-  options: unknown,
-  known: readonly string[],
-  fail: (name: string, message: string) => Error,
-): void {
+export function assertKnownOptions(options: unknown, known: readonly string[]): void {
   if (!isPlainObject(options)) {
-    throw fail(
+    throw new JwtOptionError(
       'options',
       `The options must be a plain object, such as { ${known[0] as string}: … }; got ${describeOptions(options)}.`,
     );
@@ -50,11 +49,22 @@ export function assertKnownOptions(
   // for…in, not Object.keys: an enumerable name on a null prototype counts too.
   for (const name in options) {
     if (!Object.prototype.hasOwnProperty.call(options, name)) {
-      throw fail(name, `The option "${name}" is inherited, not the options object's own; pass a plain object.`);
+      throw new JwtOptionError(name, `The option "${name}" is inherited, not the options object's own; pass a plain object.`);
     }
     if (!known.includes(name)) {
       const hint = Object.prototype.hasOwnProperty.call(ELSEWHERE, name) ? ` ${ELSEWHERE[name] as string}` : '';
-      throw fail(name, `Unknown option "${name}".${hint} Known options: ${known.join(', ')}.`);
+      throw new JwtOptionError(name, `Unknown option "${name}".${hint} Known options: ${known.join(', ')}.`);
     }
+  }
+}
+
+/**
+ * `options.algorithm`, when given, must name a supported algorithm. A name
+ * that is not one is a caller error; a real algorithm that does not fit the
+ * key or the token is a `JwtAlgorithmError`, raised where that is decided.
+ */
+export function assertAlgorithmOption(algorithm: unknown): void {
+  if (algorithm !== undefined && !isAlgorithm(algorithm)) {
+    throw new JwtOptionError('algorithm', `Unsupported algorithm ${describeValue(algorithm)} in options.algorithm.`);
   }
 }

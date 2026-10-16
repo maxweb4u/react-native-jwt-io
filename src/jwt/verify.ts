@@ -1,13 +1,13 @@
 import { verifyBytes } from '../crypto/backend';
-import { JwtAlgorithmError, JwtClaimError, JwtMalformedError, JwtSignatureError } from '../errors/errors';
+import { JwtAlgorithmError, JwtMalformedError, JwtSignatureError } from '../errors/errors';
 import { isJwtKeySet, type JwtKeySet, selectKey } from '../keys/jwks';
 import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { isAlgorithm } from '../types/algorithm';
 import { type DecodedJwt, type JwtPayload } from '../types/jwt';
 import { type VerifyOptions } from '../types/options';
 import { describeValue } from '../utils/describe';
-import { assertKnownOptions } from '../utils/options';
-import { validateClaims } from './claims';
+import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
+import { booleanOption, claimRules, validateClaims } from './claims';
 import { parseToken } from './parse';
 
 const VERIFY_OPTIONS = [
@@ -39,7 +39,10 @@ export function verify<TPayload = JwtPayload>(
   options: VerifyOptions = {},
 ): DecodedJwt<TPayload> {
   const opts: VerifyOptions = options ?? {};
-  assertKnownOptions(opts, VERIFY_OPTIONS, (name, message) => new JwtClaimError(name, message));
+  assertKnownOptions(opts, VERIFY_OPTIONS);
+  assertAlgorithmOption(opts.algorithm);
+  const allowShortSecret = booleanOption(opts.allowShortSecret, 'allowShortSecret');
+  const rules = claimRules(opts);
   const { header, payload, signingInput, signature } = parseToken(token);
 
   const alg = header.alg as string;
@@ -67,11 +70,11 @@ export function verify<TPayload = JwtPayload>(
   if (resolved.algorithm !== alg) {
     throw new JwtAlgorithmError(`The token is signed with ${alg}, but the key is for ${resolved.algorithm}.`);
   }
-  assertSecretStrength(resolved, opts.allowShortSecret);
+  assertSecretStrength(resolved, allowShortSecret);
   if (!verifyBytes(alg, resolved.material, signingInput, signature)) {
     throw new JwtSignatureError();
   }
 
-  validateClaims(header, payload, opts);
-  return Object.freeze({ header, payload: payload as TPayload });
+  validateClaims(header, payload, rules);
+  return Object.freeze({ header, payload: payload as JwtPayload & TPayload });
 }

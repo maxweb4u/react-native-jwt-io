@@ -2,7 +2,7 @@ import { JwtAlgorithmError, JwtKeyError, JwtKeyNotFoundError } from '../errors/e
 import { type Algorithm } from '../types/algorithm';
 import { type JwkSet } from '../types/jwt';
 import { isPlainObject } from '../utils/json';
-import { assertKnownOptions } from '../utils/options';
+import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
 import { importJWK, unsupportedReason } from './jwk';
 import { type JwtKey } from './JwtKey';
 
@@ -44,7 +44,9 @@ export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKe
     throw new JwtKeyError('createJWKS expects a JWKS object: { keys: [...] }.');
   }
   const opts: CreateJwksOptions = options ?? {};
-  assertKnownOptions(opts, ['algorithm'], (_name, message) => new JwtKeyError(message));
+  assertKnownOptions(opts, ['algorithm']);
+  // Checked here: inside the loop an unknown name would only skip every key it applies to.
+  assertAlgorithmOption(opts.algorithm);
   const keys: JwtKey[] = [];
   const skipped: SkippedJwk[] = [];
   jwks.keys.forEach((jwk, index) => {

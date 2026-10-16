@@ -34,6 +34,7 @@ export {
   JwtMalformedError,
   JwtMigrationError,
   JwtNotBeforeError,
+  JwtOptionError,
   JwtSignatureError,
 } from './errors/errors';
 

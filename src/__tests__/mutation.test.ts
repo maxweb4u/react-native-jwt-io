@@ -232,7 +232,7 @@ describe('claims and options', () => {
   });
   it('K:S5 a header toJSON that adds crit', () => {
     const header = { toJSON: () => ({ alg: 'HS256', typ: 'JWT', crit: ['exp'] }) };
-    expect(() => sign({}, SECRET_32, { header })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, { header })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
   it('K:S7 an iat in milliseconds', () => {
     expect(() => sign({ iat: T * 1000 }, SECRET_32)).toThrow(/milliseconds/);

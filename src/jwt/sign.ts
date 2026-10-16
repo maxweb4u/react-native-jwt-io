@@ -1,13 +1,13 @@
 import { signBytes } from '../crypto/backend';
-import { JwtClaimError } from '../errors/errors';
+import { JwtClaimError, JwtOptionError } from '../errors/errors';
 import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { type SignOptions } from '../types/options';
 import { base64UrlEncode } from '../utils/base64';
 import { isPlainObject, parseJson } from '../utils/json';
-import { assertKnownOptions } from '../utils/options';
+import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
 import { MAX_PLAUSIBLE_NUMERIC_DATE } from '../utils/time';
 import { utf8Encode } from '../utils/utf8';
-import { currentSeconds, durationOption, stringList, validateRegisteredClaims } from './claims';
+import { booleanOption, currentSeconds, durationOption, stringList, validateRegisteredClaims } from './claims';
 
 const RESERVED_HEADER = ['alg', 'crit', 'b64'];
 const STRING_HEADER = ['typ', 'cty', 'kid'] as const;
@@ -34,16 +34,19 @@ const SIGN_OPTIONS = [
  */
 export function sign(payload: object, key: KeyInput, options: SignOptions = {}): string {
   const opts: SignOptions = options ?? {};
-  assertKnownOptions(opts, SIGN_OPTIONS, (name, message) => new JwtClaimError(name, message));
+  assertKnownOptions(opts, SIGN_OPTIONS);
+  assertAlgorithmOption(opts.algorithm);
+  const allowShortSecret = booleanOption(opts.allowShortSecret, 'allowShortSecret');
+  const noTimestamp = booleanOption(opts.noTimestamp, 'noTimestamp');
   if (!isPlainObject(payload)) {
     throw new JwtClaimError('payload', 'The payload must be a plain object.');
   }
   const resolved = resolveKey(key, opts.algorithm);
-  assertSecretStrength(resolved, opts.allowShortSecret);
+  assertSecretStrength(resolved, allowShortSecret);
   const claims: Record<string, unknown> = { ...payload };
 
   const now = Math.floor(currentSeconds(opts.now));
-  if (claims.iat === undefined && opts.noTimestamp !== true) {
+  if (claims.iat === undefined && !noTimestamp) {
     claims.iat = now;
   }
   const base = typeof claims.iat === 'number' ? claims.iat : now;
@@ -55,12 +58,12 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   setOnce(claims, 'aud', audienceOption(opts.audience), 'audience');
 
   if (opts.header !== undefined && !isPlainObject(opts.header)) {
-    throw new JwtClaimError('header', 'options.header must be a plain object.');
+    throw new JwtOptionError('header', 'options.header must be a plain object.');
   }
   const header: Record<string, unknown> = { alg: resolved.algorithm, typ: 'JWT' };
   for (const [name, value] of Object.entries(opts.header ?? {})) {
     if (RESERVED_HEADER.includes(name)) {
-      throw new JwtClaimError(`header.${name}`, `The header "${name}" cannot be set through options.header.`);
+      throw new JwtOptionError(`header.${name}`, `The header "${name}" cannot be set through options.header.`);
     }
     if (name !== '__proto__') {
       header[name] = value;
@@ -80,12 +83,12 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
     headerEcho.alg !== resolved.algorithm ||
     RESERVED_HEADER.slice(1).some((name) => name in headerEcho)
   ) {
-    throw new JwtClaimError('header', 'The header does not serialize to the header that was built (a toJSON method?).');
+    throw new JwtOptionError('header', 'The header does not serialize to the header that was built (a toJSON method?).');
   }
   // verify refuses these when they are not strings; sign must not issue such a token.
   for (const name of STRING_HEADER) {
     if (headerEcho[name] !== undefined && typeof headerEcho[name] !== 'string') {
-      throw new JwtClaimError(`header.${name}`, `The header "${name}" must be a string.`);
+      throw new JwtOptionError(`header.${name}`, `The header "${name}" must be a string.`);
     }
   }
   const payloadText = serialize(claims, 'payload');
@@ -120,7 +123,7 @@ function setRelative(
     return;
   }
   if (claims[name] !== undefined) {
-    throw new JwtClaimError(name, `Both payload.${name} and options.${option} are set; use one.`);
+    throw new JwtOptionError(option, `Both payload.${name} and options.${option} are set; use one.`);
   }
   claims[name] = base + offset;
 }
@@ -130,14 +133,14 @@ function setOnce(claims: Record<string, unknown>, name: string, value: unknown, 
     return;
   }
   if (claims[name] !== undefined) {
-    throw new JwtClaimError(name, `Both payload.${name} and options.${option} are set; use one.`);
+    throw new JwtOptionError(option, `Both payload.${name} and options.${option} are set; use one.`);
   }
   claims[name] = value;
 }
 
 function stringOption(value: unknown, name: string): string | undefined {
   if (value !== undefined && typeof value !== 'string') {
-    throw new JwtClaimError(name, `options.${name} must be a string.`);
+    throw new JwtOptionError(name, `options.${name} must be a string.`);
   }
   return value;
 }
@@ -149,15 +152,17 @@ function audienceOption(value: unknown): string | string[] | undefined {
   return [...stringList(value, 'audience')];
 }
 
-function serialize(value: Record<string, unknown>, name: string): string {
+/** The header comes from options, the payload is claims: each failure is reported as what it is. */
+function serialize(value: Record<string, unknown>, name: 'header' | 'payload'): string {
+  const fail = (message: string): Error => (name === 'header' ? new JwtOptionError(name, message) : new JwtClaimError(name, message));
   let text: string | undefined;
   try {
     text = JSON.stringify(value);
   } catch (error) {
-    throw new JwtClaimError(name, `The ${name} cannot be serialized to JSON: ${(error as Error).message}`);
+    throw fail(`The ${name} cannot be serialized to JSON: ${(error as Error).message}`);
   }
   if (typeof text !== 'string') {
-    throw new JwtClaimError(name, `The ${name} does not serialize to JSON.`);
+    throw fail(`The ${name} does not serialize to JSON.`);
   }
   return text;
 }

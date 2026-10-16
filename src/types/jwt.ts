@@ -25,9 +25,15 @@ export interface JwtPayload {
   readonly [claim: string]: unknown;
 }
 
+/**
+ * `TPayload` describes the claims the caller expects and adds them to the
+ * registered ones, so `exp`, `sub` and the rest stay typed: with
+ * `verify<{ roles: string[] }>`, `payload.roles` and `payload.exp` both work.
+ * Only the registered claims are checked; the rest is the caller's assertion.
+ */
 export interface DecodedJwt<TPayload = JwtPayload> {
   readonly header: JwtHeader;
-  readonly payload: TPayload;
+  readonly payload: JwtPayload & TPayload;
 }
 
 /** A JSON Web Key as it appears in JSON (RFC 7517). Only the members this library reads are typed. */

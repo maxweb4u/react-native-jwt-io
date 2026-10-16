@@ -14,6 +14,7 @@ export const JwtErrorCode = Object.freeze({
   Expired: 'ERR_JWT_EXPIRED',
   NotBefore: 'ERR_JWT_NOT_BEFORE',
   ClaimInvalid: 'ERR_JWT_CLAIM_INVALID',
+  OptionInvalid: 'ERR_JWT_OPTION_INVALID',
   KeyInvalid: 'ERR_JWT_KEY_INVALID',
   KeyNotFound: 'ERR_JWT_KEY_NOT_FOUND',
   HostRequirement: 'ERR_JWT_HOST_REQUIREMENT',
@@ -87,6 +88,22 @@ export class JwtClaimError extends JwtError {
   }
 }
 
+/**
+ * An option is unknown, of the wrong type, or out of range — a mistake in the
+ * calling code, not in the token. Its own class so that an app which treats
+ * every `JwtError` from `verify` as "sign the user out" can still tell a bug
+ * from a bad token. See memory_bank/adr/ADR-008-option-errors.md.
+ */
+export class JwtOptionError extends JwtError {
+  /** The option's name, such as `clockTolerance` or `header.kid`; `options` for the object as a whole. */
+  readonly option: string;
+
+  constructor(option: string, message: string) {
+    super(JwtErrorCode.OptionInvalid, message);
+    this.option = option;
+  }
+}
+
 /** A key cannot be imported, or cannot be used for the requested operation. */
 export class JwtKeyError extends JwtError {
   constructor(message: string) {
@@ -140,6 +157,7 @@ named({
   JwtExpiredError,
   JwtNotBeforeError,
   JwtClaimError,
+  JwtOptionError,
   JwtKeyError,
   JwtKeyNotFoundError,
   JwtHostRequirementError,

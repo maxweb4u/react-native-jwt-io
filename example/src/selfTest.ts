@@ -4,6 +4,7 @@ import {
   importPEM,
   isExpired,
   JwtError,
+  JwtOptionError,
   JwtSignatureError,
   sign,
   verify,
@@ -171,6 +172,18 @@ export function runSelfTest(): Result[] {
     check('Unverified read', () => {
       const { header } = decodeUnverified(fixtures.hs256NodeToken);
       return [header.alg === 'HS256' && !isExpired(fixtures.hs256NodeToken), 'decodeUnverified, isExpired'];
+    }),
+    check('Option mistakes are JwtOptionError', () => {
+      // A bug in the call, told apart from a bad token — even when the token
+      // is bad too, and with the class name intact in a release build.
+      const errors = [
+        thrown(() => verify(fixtures.hs256NodeToken, fixtures.secret, { maxAge: '1h' } as never)),
+        thrown(() => verify(tamper(fixtures.hs256NodeToken), fixtures.secret, { issuer: 5 as never })),
+      ];
+      const ok = errors.every(
+        (error) => error instanceof JwtOptionError && error.code === 'ERR_JWT_OPTION_INVALID' && error.name === 'JwtOptionError',
+      );
+      return [ok, errors.map((error) => (error as JwtOptionError | null)?.option ?? 'none').join(', ')];
     }),
     check('alg "none" refused', () => {
       try {

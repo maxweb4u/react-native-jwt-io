@@ -27,8 +27,8 @@ describe('sign', () => {
   });
 
   it('refuses a claim set twice', () => {
-    expect(() => sign({ exp: T }, SECRET_32, { expiresIn: 60 })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(() => sign({ iss: 'a' }, SECRET_32, { issuer: 'b' })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({ exp: T }, SECRET_32, { expiresIn: 60 })).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => sign({ iss: 'a' }, SECRET_32, { issuer: 'b' })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('refuses milliseconds where seconds belong (FM-3)', () => {
@@ -37,14 +37,14 @@ describe('sign', () => {
   });
 
   it('refuses a bad duration', () => {
-    expect(() => sign({}, SECRET_32, { expiresIn: '10 fortnights' })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(() => sign({}, SECRET_32, { expiresIn: -5 })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, { expiresIn: '10 fortnights' })).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => sign({}, SECRET_32, { expiresIn: -5 })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('takes extra header parameters but never alg, crit or b64', () => {
     expect(decodeUnverified(sign({}, SECRET_32, { header: { cty: 'x', typ: 'at+jwt' } })).header).toEqual({ alg: 'HS256', typ: 'at+jwt', cty: 'x' });
-    expect(() => sign({}, SECRET_32, { header: { alg: 'none' } })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(() => sign({}, SECRET_32, { header: { crit: ['x'] } })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, { header: { alg: 'none' } })).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => sign({}, SECRET_32, { header: { crit: ['x'] } })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('refuses payloads that are not plain JSON objects', () => {
@@ -173,7 +173,7 @@ describe('expiry helpers', () => {
     expect(isExpired(token, { now: at(T + 59) })).toBe(false);
     expect(isExpired(token, { now: at(T + 60) })).toBe(true);
     expect(isExpired(token, { now: at(T + 65), clockTolerance: '10s' })).toBe(false);
-    expect(() => isExpired(token, { clockTolerance: -1 })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => isExpired(token, { clockTolerance: -1 })).toThrow(code('ERR_JWT_OPTION_INVALID'));
     expect(getExpiration(token)).toEqual(at(T + 60));
   });
 

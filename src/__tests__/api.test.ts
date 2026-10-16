@@ -41,6 +41,7 @@ it('exports exactly the documented surface', () => {
       'JwtMalformedError',
       'JwtMigrationError',
       'JwtNotBeforeError',
+      'JwtOptionError',
       'JwtSignatureError',
       'createJWKS',
       'decode',

@@ -119,7 +119,7 @@ describe('#6 createJWKS accepts null options, like sign and verify', () => {
 
 describe('#7 sign never issues a token its own verify refuses', () => {
   it.each([{ kid: 5 }, { typ: 5 }, { cty: null }, { typ: { a: 1 } }])('header %p', (header) => {
-    expect(() => sign({}, SECRET_32, { header })).toThrow(expect.objectContaining({ code: 'ERR_JWT_CLAIM_INVALID' }));
+    expect(() => sign({}, SECRET_32, { header })).toThrow(expect.objectContaining({ code: 'ERR_JWT_OPTION_INVALID' }));
   });
 
   it('string values still pass', () => {
@@ -393,7 +393,7 @@ describe('#18 unknown options are errors, not silently ignored', () => {
     ['expiresIN', /Known options/],
   ])('sign refuses %s', (name, hint) => {
     expect(() => sign({}, SECRET_32, { [name]: '1h' } as never)).toThrow(
-      expect.objectContaining({ code: 'ERR_JWT_CLAIM_INVALID', claim: name }),
+      expect.objectContaining({ code: 'ERR_JWT_OPTION_INVALID', option: name }),
     );
     expect(() => sign({}, SECRET_32, { [name]: '1h' } as never)).toThrow(hint);
   });
@@ -409,9 +409,9 @@ describe('#18 unknown options are errors, not silently ignored', () => {
   });
 
   it('isExpired, importPEM and createJWKS refuse unknown options too', () => {
-    expect(() => isExpired(token, { tolerance: 5 } as never)).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(() => importPEM(pem(rsa.publicKey), 'RS256', { keyId: 'k' } as never)).toThrow(code('ERR_JWT_KEY_INVALID'));
-    expect(() => createJWKS({ keys: [] }, { alg: 'RS256' } as never)).toThrow(code('ERR_JWT_KEY_INVALID'));
+    expect(() => isExpired(token, { tolerance: 5 } as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => importPEM(pem(rsa.publicKey), 'RS256', { keyId: 'k' } as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => createJWKS({ keys: [] }, { alg: 'RS256' } as never)).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('options with only known names pass', () => {
