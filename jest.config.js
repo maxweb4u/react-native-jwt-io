@@ -14,10 +14,10 @@ module.exports = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   collectCoverageFrom: ['src/**/*.ts', '!src/**/__tests__/**', '!src/index.ts', '!src/types/**'],
   // A floor just under the measured value, not a goal: it exists to make an
-  // unexplained fall visible. Measured at 96.49 / 95.03 / 100 / 96.41 on
+  // unexplained fall visible. Measured at 97.19 / 95.8 / 100 / 97.12 on
   // 2026-10-16, ±0.1 between runs because test keys are generated per run
   // (memory_bank/engineering/testing-policy.md).
   coverageThreshold: {
-    global: { statements: 96, branches: 94, functions: 100, lines: 96 },
+    global: { statements: 97, branches: 95, functions: 100, lines: 97 },
   },
 };
