@@ -77,6 +77,59 @@ describe('#1 a public key is refused as a secret in every form it is shown in', 
   });
 });
 
+describe('#1b key material behind a wrapper is refused too (a third pass, 2026-10-16)', () => {
+  const spki = rsa.publicKey.export({ type: 'spki', format: 'der' });
+  const publicPem = pem(rsa.publicKey);
+  const ecPoint = ec.publicKey.export({ type: 'spki', format: 'der' }).subarray(-65);
+  const sshBlob = (() => {
+    const field = (data: Buffer) => Buffer.concat([Buffer.from([0, 0, 0, data.length]), data]);
+    return Buffer.concat([field(Buffer.from('ssh-ed25519')), field(ed.publicKey.export({ type: 'spki', format: 'der' }).subarray(12))]);
+  })();
+  const pkcs7 = tlv(0x30, tlv(0x06, Uint8Array.of(0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02)), tlv(0xa0, tlv(0x30)));
+
+  it.each<[string, string | Uint8Array]>([
+    ['base64 of the PEM text (a Kubernetes secret)', Buffer.from(publicPem).toString('base64')],
+    ['base64 of a JWK', Buffer.from(JSON.stringify(jwkOf(rsa.publicKey))).toString('base64')],
+    ['base64 of base64 DER', Buffer.from(spki.toString('base64')).toString('base64')],
+    ['a raw uncompressed EC point, bytes', Uint8Array.from(ecPoint)],
+    ['a raw EC point, hex with 0x', `0x${Buffer.from(ecPoint).toString('hex')}`],
+    ['a raw EC point, base64', Buffer.from(ecPoint).toString('base64')],
+    ['hex with colons, as openssl -text prints', spki.toString('hex').replace(/(..)(?!$)/g, '$1:')],
+    ['base64 with literal \\n escapes (.env)', spki.toString('base64').replace(/(.{64})/g, '$1\\n')],
+    ['a PEM in .env form, literal \\n', publicPem.replace(/\n/g, '\\n')],
+    ['a value in JSON quotes', JSON.stringify(spki.toString('base64'))],
+    ['a JWK serialized twice', JSON.stringify(JSON.stringify(jwkOf(rsa.publicKey)))],
+    ['URL-encoded base64', encodeURIComponent(spki.toString('base64'))],
+    ['an SSH wire blob, base64 without its type', sshBlob.toString('base64')],
+    ['an authorized_keys line with options', `from="10.0.0.1",no-pty ssh-ed25519 ${sshBlob.toString('base64')} me`],
+    ['an SSH certificate line', `ssh-ed25519-cert-v01@openssh.com AAAA${sshBlob.toString('base64')}`],
+    ['PKCS#7 DER', pkcs7],
+    ['DER with a trailing newline', Uint8Array.from(Buffer.concat([spki, Buffer.from('\n')]))],
+    ['UTF-8 BOM before base64', Uint8Array.from(Buffer.concat([Buffer.of(0xef, 0xbb, 0xbf), Buffer.from(spki.toString('base64'))]))],
+    ['a PEM in UTF-16LE (PowerShell 5)', Uint8Array.from(Buffer.from(publicPem, 'utf16le'))],
+    ['PEM with typographic dashes', publicPem.replace(/-----/g, '\u2013\u2013\u2013\u2013\u2013')],
+    ['a PEM without its BEGIN line', publicPem.split('\n').slice(1).join('\n')],
+    ['a JWK of n and e only, no kty', JSON.stringify({ n: (jwkOf(rsa.publicKey) as { n: string }).n, e: 'AQAB' })],
+    ['a JS-literal JWK', `{kty: 'RSA', n: '${(jwkOf(rsa.publicKey) as { n: string }).n}', e: 'AQAB'}`],
+    ['a Keycloak realm document', JSON.stringify({ realm: 'demo', public_key: spki.toString('base64'), 'token-service': 'https://x/' })],
+  ])('%s', (_name, key) => {
+    expect(() => verify(forge(key), key)).toThrow(code('ERR_JWT_KEY_INVALID'));
+  });
+
+  it('still accepts a JSON list of rotating secrets, and prose that merely mentions keys', () => {
+    for (const secret of ['{"keys":["s3cr3t-one-0123456789abcdef0123","s3cr3t-two-0123456789abcdef0123"]}', 'monkeys"keys": fake secret padding padding padding padding']) {
+      expect(verify(sign({ a: 1 }, secret), secret).payload.a).toBe(1);
+    }
+  });
+
+  it('stays linear on a long run of dashes', () => {
+    const dashes = '-'.repeat(65536);
+    const start = Date.now();
+    expect(verify(sign({ a: 1 }, dashes), dashes).payload.a).toBe(1);
+    expect(Date.now() - start).toBeLessThan(200);
+  });
+});
+
 describe('#2 error names survive a minifier', () => {
   const errorClasses = Object.entries(api).filter(([name]) => /^Jwt\w*Error$/.test(name)) as [string, { prototype: object }][];
 
