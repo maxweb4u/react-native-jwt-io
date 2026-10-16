@@ -36,7 +36,7 @@ The end date is written into the README with the 2.0.0 release. Decided in [ADR-
 ## Checklist
 
 1. `npm run verify` passes.
-2. `example/` runs in a Release build on a physical device or simulator on both platforms, and its self-test screen reads 14/14.
+2. `example/` runs in a Release build on a physical device or simulator on both platforms, and its self-test screen reads 15/15.
 3. `npm pack --dry-run` lists only `lib/`, `src/`, `README.md`, `LICENSE`, `CHANGELOG.md`, `package.json`.
 4. `CHANGELOG.md` has an entry; for 2.0.0 the README carries the migration guide and the 1.0.x end-of-support date.
 5. The memory bank matches the change ([../dna/lifecycle.md](../dna/lifecycle.md)).

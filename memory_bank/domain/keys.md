@@ -28,14 +28,15 @@ An RSA JWK may carry `d` without the primes, so nothing at import proves that `d
 
 DER is read with one encoding per value: definite minimal lengths, minimal positive integers, OIDs without `0x80` padding, no trailing data, and optional fields (`[0]`, `[1]` in PKCS#8 and SEC1; `[0]`–`[3]` in RSASSA-PSS parameters) at most once each and in order.
 
-Key material is never accepted as a secret, in any form a public key is commonly shown in:
+Key material is never accepted as a secret, in any form a public key is commonly stored or pasted in (`src/keys/keyMaterial.ts`):
 
-- PEM armor anywhere in the input (`openssl pkcs12` writes "Bag Attributes" lines before it), in any case and with any spacing;
-- JWK or JWKS JSON, escaped or not;
-- an OpenSSH public key (`ssh-rsa AAAA…`, `ssh-ed25519`, `ecdsa-sha2-…`);
-- DER of a key (SPKI, PKCS#1, PKCS#8, SEC1) or of an X.509 certificate — as bytes, or as base64, base64url (Keycloak shows a realm's `public_key` this way), hex or Latin-1 text.
+- PEM armor anywhere in the input (`openssl pkcs12` writes "Bag Attributes" lines before it), in any case, with any spacing, typographic dashes, or only its END line;
+- JWK or JWKS JSON, escaped or not, a JS literal, `n`/`e` or `crv`/`x` without `kty`, and JSON documents that carry a key (a Keycloak realm with its `public_key`);
+- OpenSSH public keys, authorized_keys lines with options, SSH certificates, and the SSH wire blob without its type;
+- DER of a key (SPKI, PKCS#1, PKCS#8, SEC1), an X.509 certificate or PKCS#7, and an uncompressed EC point (`04‖x‖y`, WebCrypto's raw export) on a supported curve;
+- each of these as bytes or text: base64, base64url (Keycloak's `public_key`), hex (also `0x`-prefixed or colon-separated, as `openssl … -text` prints), Latin-1, UTF-8 with a BOM, UTF-16LE; with literal `\n` escapes (`.env` files), JSON quotes, URL encoding, trailing whitespace — and base64 of any of it (Kubernetes secrets), up to three levels.
 
-The secret path means "HMAC secret", and keeping the two apart is what closes algorithm confusion structurally rather than by a runtime check. One form cannot be told apart from a secret: a bare RSA modulus (a JWK's `n` alone) is indistinguishable from random bytes. The DER check costs little on real secrets: it parses only input that begins with a SEQUENCE spanning all of it, about one random secret in 65,000.
+The secret path means "HMAC secret", and keeping the two apart is what closes algorithm confusion structurally rather than by a runtime check. Measured on 2026-10-16 against 425 forms of six key types (RSA, P-256, P-384, P-521, secp256k1, Ed25519): 52 still pass, all of them either indistinguishable from random bytes — a bare RSA modulus, a bare EC or Ed25519 coordinate (half of all random 32-byte strings are valid Ed25519 points), a compressed EC point — or forms no tool writes (BER lengths, DER decoded lossily as UTF-8), or private-key containers whose public part an attacker does not have. Against 520,000 generated secrets of 26 kinds — random bytes, base64, hex, UUIDs, passphrases, framework secret formats, JSON that is not a JWK — none was refused. Refused on purpose: text that contains a PEM armor line or starts like an OpenSSH key, and an `oct` JWK (use `importJWK`). Every pattern is linear: an earlier `-{3,}BEGIN` took 7 seconds on 64 KB of dashes.
 
 ## Binding
 

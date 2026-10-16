@@ -40,7 +40,10 @@ Requirements:
   Ed25519 (React Native 0.70's preset did; so does an old `@babel/preset-env` target).
 - Signing with **PS256/384/512** needs `crypto.getRandomValues`, which Hermes
   lacks. Install [`react-native-get-random-values`](https://github.com/LinusU/react-native-get-random-values)
-  and import it once, before this library. Nothing else needs it.
+  (2.x needs React Native 0.81 or later; use 1.11 below that) and import it
+  once, first in your entry file — before this library, which checks for it
+  when it loads. Nothing else needs it; without it, PS* signing throws
+  `JwtHostRequirementError` naming the package.
 - Node 20.19+ or 22.12+ works too (CommonJS and ESM): the CommonJS build loads
   the ES-module-only crypto packages with `require()`.
 - **Jest in your app:** the crypto packages are ES modules only, so let Jest
@@ -247,10 +250,11 @@ What else changes:
 - **Public keys must be imported.** A key passed as a string or bytes is
   refused, because a string is an HMAC secret — the precondition of the
   RS256→HS256 forgery. That covers a PEM (any case, any preamble), a JWK or JWKS
-  as JSON, an OpenSSH public key, and DER — as bytes, or as base64, base64url or
-  hex text, the way some servers show their public key (Keycloak's
-  `public_key`). A key's bare RSA modulus cannot be told from a secret; do not
-  configure one as one.
+  as JSON, an OpenSSH public key, a certificate, a raw EC point, and DER — as
+  bytes or as base64, base64url or hex text, the way servers show their public
+  key (Keycloak's `public_key`) — also inside `.env` escapes, JSON quotes or
+  another layer of base64 (Kubernetes secrets). A bare RSA modulus or EC
+  coordinate cannot be told from a secret; do not configure one as one.
 - **`iat` is added** to signed tokens unless `noTimestamp: true`.
 
 ## License

@@ -22,7 +22,8 @@ src/errors/     JwtError and its subclasses, each with a stable `code`.
 src/types/      Public types: Algorithm, JwtHeader, JwtPayload, Jwk, options. No logic.
 src/utils/      base64url, UTF-8, JSON without __proto__ (and deep freezing), bytes, NumericDate and durations, option checks, safe value descriptions for messages. Pure.
 src/keys/       JwtKey (opaque, one algorithm), DER reader, importPEM, importJWK, createJWKS,
-                resolveKey (bare secrets, binding, secret length).
+                resolveKey (bare secrets, binding, secret length), keyMaterial (public keys
+                passed as secrets, in any encoding).
 src/crypto/     curves (noble instances, point validation) and backend (sign/verify over bytes).
 src/jwt/        parse, sign, verify, claims, decodeUnverified, expiry helpers, 1.x tombstones.
 src/index.ts    The barrel. Its first import is host/hostCheck; the rest is re-exports.

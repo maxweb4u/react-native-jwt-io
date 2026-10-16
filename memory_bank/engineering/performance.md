@@ -49,6 +49,8 @@ The phone is about 1.7× slower than the simulator across the board, so the simu
 
 The 14-check self-test of `example/`, Release builds, after both review rounds of 2026-10-16: **14/14** on the same Realme RMX3363 and on an iOS 18.3 simulator (iPhone 16 Pro). Times match the tables above within noise, except RS256 signing: 917 ms on the phone (507 → 492 ms on the simulator), because `sign` now verifies every RSA signature before returning it (about 1% of the cost — the rest is run-to-run variation). The release builds are minified, so the "name intact" part of the tampered-signature check proves the error-name fix where it matters.
 
+With `react-native-get-random-values` added to `example/` (15 checks), RSA-PSS signs on the phone for the first time: PS256 828 ms, PS384 826 ms, PS512 832 ms (511 ms each on the iOS simulator) — the cost of RS256 signing, as expected (the private-key operation dominates; the salt is 32–64 random bytes).
+
 ## An older Hermes — measured 2026-10-15
 
 Official Hermes v0.12.0 CLI (August 2022, the React Native 0.70/0.71 era) on the same Mac, with the self-test compiled through React Native 0.71's Babel preset and run as bytecode: all 12 checks of the time pass, and the times match the 0.87 simulator within 10% (ES256 verify 37 ms, RS256 verify 5.7 ms, EdDSA verify 18 ms). An old app gains nothing and loses nothing by its Hermes version.

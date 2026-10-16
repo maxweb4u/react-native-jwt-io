@@ -59,8 +59,9 @@ A rewrite in TypeScript with a new, synchronous API. Breaking: see
 ### Security
 
 - `alg: none` is never accepted, and key material passed as a secret is
-  refused — PEM in any case and after any preamble, JWK and JWKS JSON, OpenSSH
-  public keys, and DER as bytes, base64, base64url, hex or Latin-1 text —
+  refused — PEM, JWK and JWKS JSON, OpenSSH keys, certificates, PKCS#7, raw EC
+  points and DER, as bytes or base64, base64url, hex or Latin-1 text, also
+  behind `.env` escapes, JSON quotes, URL encoding, UTF-16 or base64 —
   closing RS256-to-HS256 algorithm confusion by construction.
 - Base64url is decoded strictly (no padding, no foreign characters, zero
   trailing bits); `__proto__` keys are dropped from decoded JSON; unknown
