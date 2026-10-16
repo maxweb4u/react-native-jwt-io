@@ -130,6 +130,20 @@ Two targeted passes over the second round's code, and the device gap it left. Re
 | 5 | PS256/384/512 signing had never run on a device: `example/` had no random source | test gap | `react-native-get-random-values` in `example/`, imported first; a "PS* signing" check (15 checks); 15/15 on the Realme RMX3363 and the iOS simulator |
 | 6 | The README did not say that `react-native-get-random-values` 2.x needs React Native 0.81 | inaccuracy | 1.11 below that, said in the README |
 
+## API review before 2.0.0
+
+The last pass over the public surface (`src/index.ts`, the option types, the error classes, `package.json` `exports`) on 2026-10-16, after `2.0.0-alpha.0`, looking for what cannot change after 2.0.0 without a major release. Regressions in `src/__tests__/apiFreeze.test.ts`; the decision is [ADR-008](adr/ADR-008-option-errors.md). The `example/` self-test gained a check that an option mistake is a `JwtOptionError` with its name intact, for a tampered token too: 16/16 on the Realme RMX3363 (Android 13) and the iOS 18.3 simulator, Release builds.
+
+| # | Finding | Outcome |
+|-|-|-|
+| 1 | A mistake in the options was a `JwtClaimError` (or a `JwtKeyError` from `importPEM` and `createJWKS`): an app that signs the user out on any `JwtError` from `verify` would do so on every launch for a typo in its own code | `JwtOptionError`, `ERR_JWT_OPTION_INVALID`, with `option` |
+| 2 | The claim options' values were checked only after the signature, so an expired or forged token hid a mistake in them; `isExpired` did not check `now` or `clockTolerance` for a token without `exp` | options are checked before the token is read |
+| 3 | `createJWKS(set, { algorithm: 'RS999' })` skipped every key the option applied to | an unknown algorithm name is a `JwtOptionError`, in `sign` and `verify` too |
+| 4 | Switches were compared with `=== true`: `ignoreExpiration: 'true'` was quietly false | they must be booleans |
+| 5 | `verify<T>` returned `payload: T`, losing the registered claims' types — the README's `decodeUnverified<{ sub; roles }>` lost `exp` | `payload: JwtPayload & T` |
+
+Kept as they are, each extensible in a minor release: the function names and option names (aligned with `jose` and `jsonwebtoken`), `hexToBytes` (1.x migration), `importJWK(jwk, algorithm?)` without an options argument, `now` as a `Date` only, `audience` as strings only, PEM without X.509 certificates, no key export or generation. Remote JWKS (2.1) fits the synchronous `verify`: fetching returns an ordinary `JwtKeySet`. The `types` condition comes first in `exports`, so TypeScript with `customConditions: ["react-native"]` reads the declarations, not the `.ts` sources.
+
 ## Decided
 
 | ID | Decision | Outcome | Record |
@@ -140,6 +154,7 @@ Two targeted passes over the second round's code, and the device gap it left. Re
 | OD-4 | Relationship to 1.0.x | New names, no `decode` that decodes, no compatibility layer; tombstones (default export, and named `encode`/`decode` since ADR-006) until 3.0.0; short secrets refused unless `allowShortSecret`; hex secrets via `hexToBytes`; 1.0.x security fixes for three months after 2.0.0, then npm deprecate. Accepted 2026-10-15 | [ADR-006](adr/ADR-006-named-1x-tombstones.md), superseding ADR-004 |
 | OD-5 | Minimum React Native version | No `react-native` peer; the floor is the lowest React Native whose Hermes has every feature the code needs (`BigInt`, `Object.hasOwn`, `TextEncoder`), measured — 0.74; runtime host check with `JwtHostRequirementError`; Hermes only. Accepted 2026-10-15, floor corrected 2026-10-16 | [ADR-007](adr/ADR-007-host-requirements-text-encoder.md), superseding ADR-005 |
 | OD-6 | Ship 1.0.4 first | Yes: `jsrsasign` ^11.1.5, a `files` field so the memory bank is not published, `CHANGELOG.md`, a README note on 2.0.0 and the 1.0.x window. Accepted and published 2026-10-15 | [product/roadmap.md](product/roadmap.md) |
+| OD-7 | Option errors and payload generics | A mistake in the call is `JwtOptionError`, checked before the token is read; switches must be booleans; `payload: JwtPayload & T`. Accepted 2026-10-16, after `2.0.0-alpha.0` | [ADR-008](adr/ADR-008-option-errors.md) |
 
 ## Defects in the 1.0.x line
 

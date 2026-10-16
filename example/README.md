@@ -34,7 +34,7 @@ reuses the old JavaScript bundle. Remove it first:
 rm -rf android/app/build/generated/assets/react
 ```
 
-The screen should read **Self-test 15/15 passed**. The first line must say
+The screen should read **Self-test 16/16 passed**. The first line must say
 Hermes: the self-test fails on any other engine, since Hermes is the only one
 supported. The app installs `react-native-get-random-values` and imports it
 first in `index.js`, as the library's README asks, so PS256/384/512 sign on

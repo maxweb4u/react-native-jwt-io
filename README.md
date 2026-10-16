@@ -142,8 +142,8 @@ const strong = sign({ sub: 'u1' }, SECRET_64_BYTES, { algorithm: 'HS512' });
 | Function | Returns |
 |-|-|
 | `sign(payload, key, options?)` | `string` |
-| `verify<T>(token, key \| jwks, options?)` | `{ header, payload: T }` — or throws |
-| `decodeUnverified<T>(token)` | `{ header, payload: T }`, signature **not** checked |
+| `verify<T>(token, key \| jwks, options?)` | `{ header, payload }` — or throws |
+| `decodeUnverified<T>(token)` | `{ header, payload }`, signature **not** checked |
 | `isExpired(token, { clockTolerance?, now? }?)` | `boolean`; no `exp` means never |
 | `getExpiration(token)` | `Date \| null` |
 | `importPEM(pem, algorithm, { kid? }?)` | `JwtKey` — SPKI, PKCS#8, PKCS#1 (`RSA … KEY`), SEC1 (`EC PRIVATE KEY`) |
@@ -163,9 +163,15 @@ too; for a bare secret it also picks the HMAC), `issuer` (one or a list),
 `maxTokenAge` (requires `iat`), `clockTolerance`, `ignoreExpiration`,
 `ignoreNotBefore`, `now`, `allowShortSecret`.
 
+`T` describes your own claims and is added to the registered ones: with
+`verify<{ roles: string[] }>`, both `payload.roles` and `payload.exp` are
+typed. Only the registered claims (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`,
+`jti`) are checked at run time; the rest of `T` is your assertion.
+
 Options are a plain object. An unknown option name is an error, not ignored: a
 misspelled `expiresin`, or jsonwebtoken's `maxAge`, would otherwise switch
-nothing on. So is a callback in place of options — nothing here takes one.
+nothing on. So is a callback in place of options — nothing here takes one —
+and a switch such as `ignoreExpiration` that is not `true` or `false`.
 
 A token's `aud` is checked only when you pass `audience`. If your app accepts
 tokens from an issuer that serves several audiences, pass it.
@@ -188,16 +194,30 @@ of the library in one bundle, where `instanceof` does not.
 | `JwtSignatureError` | `ERR_JWT_SIGNATURE_INVALID` | The signature does not verify |
 | `JwtExpiredError` | `ERR_JWT_EXPIRED` | `exp` passed, or older than `maxTokenAge`; has `expiredAt` |
 | `JwtNotBeforeError` | `ERR_JWT_NOT_BEFORE` | `nbf` in the future; has `notBefore` |
-| `JwtClaimError` | `ERR_JWT_CLAIM_INVALID` | A claim is wrong, missing, or of the wrong type, or a `sign`/`verify` option is malformed or unknown; has `claim` |
+| `JwtClaimError` | `ERR_JWT_CLAIM_INVALID` | A claim is wrong, missing, or of the wrong type; has `claim` |
+| `JwtOptionError` | `ERR_JWT_OPTION_INVALID` | A mistake in the call, not in the token: an unknown option, or one of the wrong type or out of range; has `option` |
 | `JwtKeyError` | `ERR_JWT_KEY_INVALID` | A key cannot be imported or used — including a public key passed as a secret, or a token whose `kid` names a key the JWKS could not import |
 | `JwtKeyNotFoundError` | `ERR_JWT_KEY_NOT_FOUND` | No key in the JWKS for the token's `kid` — or, without a `kid`, not exactly one for its `alg`; has `kid` |
 | `JwtHostRequirementError` | `ERR_JWT_HOST_REQUIREMENT` | The engine lacks a feature; has `feature` |
 | `JwtMigrationError` | `ERR_JWT_MIGRATION` | A 1.x function was called |
 
-Checks run in this order and stop at the first failure: option names, shape
-(including the types of the registered claims), algorithm and header extensions,
-key, signature, then claim values and the claim options' values (`clockTolerance`,
-`issuer`, …) — so claim values are never evaluated for an unsigned token.
+`JwtOptionError` means your code needs fixing, whatever the token was. Keep it
+apart when a failed `verify` signs the user out:
+
+```ts
+try {
+  return verify(token, key, { issuer: 'https://auth.example.com' });
+} catch (error) {
+  if (error instanceof JwtOptionError) throw error; // a bug in the call: let it surface
+  if (error instanceof JwtError) return signOut(); // the token is not acceptable
+  throw error;
+}
+```
+
+Checks run in this order and stop at the first failure: the options (names,
+types and ranges, before the token is read), shape (including the types of the
+registered claims), algorithm and header extensions, key, signature, then claim
+values — so claim values are never evaluated for an unsigned token.
 
 Error names are set as strings, so `error.name` reads `JwtExpiredError` in a
 minified release build too.

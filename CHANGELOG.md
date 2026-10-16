@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org).
 
+## [Unreleased]
+
+From the last pass over the public API before 2.0.0; breaking against
+`2.0.0-alpha.0`.
+
+### Added
+
+- `JwtOptionError` (`ERR_JWT_OPTION_INVALID`, with `option`): a mistake in
+  the call — an unknown option, or one of the wrong type or out of range — in
+  every function that takes options. An app can now tell a bug in its own
+  code from a bad token.
+
+### Changed
+
+- Option mistakes that were `JwtClaimError` (from `sign`, `verify`,
+  `isExpired`) or `JwtKeyError` (from `importPEM`, `createJWKS`) are
+  `JwtOptionError`. Problems in the token or the payload stay `JwtClaimError`.
+- `verify` and `isExpired` check all their options before reading the token,
+  so a bad token no longer hides a mistake in them.
+- The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
+  `noTimestamp` must be booleans; `'true'` was read as false.
+- `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload & T`:
+  `exp`, `sub` and the other registered claims stay typed whatever `T` is.
+
+### Fixed
+
+- `createJWKS(set, { algorithm: 'RS999' })` skipped every key the option
+  applied to; an unknown algorithm name is now refused.
+
 ## [2.0.0-alpha.0] — 2026-10-16
 
 A rewrite in TypeScript with a new, synchronous API. Breaking: see

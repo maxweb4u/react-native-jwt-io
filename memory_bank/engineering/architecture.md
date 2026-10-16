@@ -46,20 +46,20 @@ sign(payload, key, { algorithm?, allowShortSecret?, expiresIn?, notBefore?, issu
                      jwtId?, keyId?, header?, noTimestamp?, now? }): string
 verify<T>(token, key | jwks, { algorithm?, allowShortSecret?, issuer?, audience?, subject?, typ?,
                                requiredClaims?, maxTokenAge?, clockTolerance?, ignoreExpiration?,
-                               ignoreNotBefore?, now? }): { header, payload: T }
-decodeUnverified<T>(token): { header, payload: T }
+                               ignoreNotBefore?, now? }): { header, payload: JwtPayload & T }
+decodeUnverified<T>(token): { header, payload: JwtPayload & T }
 isExpired(token, { clockTolerance?, now? }): boolean
 getExpiration(token): Date | null
 importPEM(pem, algorithm, { kid? }): JwtKey
 importJWK(jwk, algorithm?): JwtKey
 createJWKS(jwks, { algorithm? }): JwtKeySet   — { keys, skipped }
 hexToBytes(hex): Uint8Array
-Algorithm, JwtErrorCode, JwtError and its ten subclasses
+Algorithm, JwtErrorCode, JwtError and its eleven subclasses
 
 encode, decode, and the default export { encode, decode, verify } — 1.x tombstones that throw JwtMigrationError; removed in 3.0.0
 ```
 
-Every function is synchronous and throws a named error on failure ([ADR-002](../adr/ADR-002-synchronous-api.md)); none returns a promise, which `src/__tests__/api.test.ts` asserts along with the exact export list. For a bare secret `algorithm` picks the HMAC (default `HS256`); for an imported key it must equal the key's own; in `verify` it also pins the token's `alg`, for a key set too ([ADR-003](../adr/ADR-003-one-key-one-algorithm.md)). Options are plain objects with known names only. Names, `decode` existing only as a tombstone, the tombstones and `allowShortSecret` are [ADR-006](../adr/ADR-006-named-1x-tombstones.md).
+Every function is synchronous and throws a named error on failure ([ADR-002](../adr/ADR-002-synchronous-api.md)); none returns a promise, which `src/__tests__/api.test.ts` asserts along with the exact export list. For a bare secret `algorithm` picks the HMAC (default `HS256`); for an imported key it must equal the key's own; in `verify` it also pins the token's `alg`, for a key set too ([ADR-003](../adr/ADR-003-one-key-one-algorithm.md)). Options are plain objects with known names only; a mistake in them is a `JwtOptionError` ([ADR-008](../adr/ADR-008-option-errors.md)). Names, `decode` existing only as a tombstone, the tombstones and `allowShortSecret` are [ADR-006](../adr/ADR-006-named-1x-tombstones.md).
 
 Everything exported from `src/index.ts` is a published contract. Adding to it is a minor release; changing or removing from it is a major one.
 
