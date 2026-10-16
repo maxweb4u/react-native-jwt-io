@@ -3,7 +3,7 @@
  * (memory_bank/backlog.md, "Review of 2026-10-15"). Each test names its finding.
  */
 import crypto from 'node:crypto';
-import { readOid } from '../keys/der';
+import { readOid, readSingle } from '../keys/der';
 import {
   Algorithm,
   createJWKS,
@@ -17,7 +17,7 @@ import {
   verify,
 } from '../index';
 import { type Jwk } from '../types/jwt';
-import { b64u, nodeKeyPair, nodeSign, pem, SECRET_32 } from './helpers/node';
+import { b64u, nodeKeyPair, nodeSign, pem, SECRET_32, tlv } from './helpers/node';
 
 const code = (c: string) => expect.objectContaining({ code: c });
 const T = 1_700_000_000;
@@ -45,8 +45,20 @@ describe('#1 an invalid "now" never switches the time checks off', () => {
 });
 
 describe('#2 an absurd clockTolerance is refused, not treated as infinite', () => {
-  it('rejects a duration that overflows', () => {
-    const expired = sign({}, SECRET_32, { now: at(T), expiresIn: 10 });
+  const expired = sign({}, SECRET_32, { now: at(T), expiresIn: 10 });
+
+  // A 400-digit string is cut by the length limit first; these reach the arithmetic.
+  it.each([1e300, Number.MAX_VALUE, `${'9'.repeat(60)}w`, `${'9'.repeat(63)}s`, 1e11 + 1])(
+    'verify and isExpired refuse clockTolerance %p, which would switch exp off',
+    (clockTolerance) => {
+      expect(() => verify(expired, SECRET_32, { now: at(T + 1e9), clockTolerance })).toThrow(
+        expect.objectContaining({ code: 'ERR_JWT_CLAIM_INVALID', claim: 'clockTolerance' }),
+      );
+      expect(() => isExpired(expired, { now: at(T + 1e9), clockTolerance })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    },
+  );
+
+  it('rejects a string too long to be a duration', () => {
     expect(() => verify(expired, SECRET_32, { clockTolerance: `${'9'.repeat(400)}s` })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
   });
 });
@@ -184,11 +196,10 @@ describe('#11 DER is read strictly', () => {
 
   it('refuses unexpected data after a PKCS#8 private key', () => {
     const der = ec.privateKey.export({ type: 'pkcs8', format: 'der' });
-    // Append NULL inside the outer SEQUENCE and fix its length (short form < 128).
-    const inner = Buffer.concat([der.subarray(2), Buffer.from([0x05, 0x00])]);
-    expect(der[0]).toBe(0x30);
-    const bad = Buffer.concat([Buffer.from([0x30, inner.length]), inner]);
-    expect(() => importPEM(toPem('PRIVATE KEY', bad), 'ES256')).toThrow(code('ERR_JWT_KEY_INVALID'));
+    // Append NULL inside the outer SEQUENCE, re-encoding its length.
+    const bad = tlv(0x30, readSingle(der, 0x30).content, Uint8Array.of(0x05, 0x00));
+    expect(importPEM(toPem('PRIVATE KEY', tlv(0x30, readSingle(der, 0x30).content)), 'ES256').type).toBe('private');
+    expect(() => importPEM(toPem('PRIVATE KEY', bad), 'ES256')).toThrow(/unexpected data after the private key/);
   });
 
   it('refuses non-NULL RSA algorithm parameters', () => {
@@ -244,7 +255,9 @@ describe('#15 results and constants are frozen', () => {
 
 describe('#16 computed times are checked like given ones', () => {
   it('refuses an expiresIn that overflows into an implausible exp', () => {
-    expect(() => sign({}, SECRET_32, { expiresIn: 1e300 })).toThrow(expect.objectContaining({ claim: 'exp' }));
+    // The longest duration accepted, added to now, is past the plausible range.
+    expect(() => sign({}, SECRET_32, { expiresIn: 1e11 })).toThrow(expect.objectContaining({ claim: 'exp' }));
+    expect(() => sign({}, SECRET_32, { expiresIn: 1e300 })).toThrow(expect.objectContaining({ claim: 'expiresIn' }));
   });
 });
 

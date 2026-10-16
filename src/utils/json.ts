@@ -9,6 +9,25 @@ export function parseJson(text: string): unknown {
   return JSON.parse(text, (key, value: unknown) => (key === '__proto__' ? undefined : value));
 }
 
+/**
+ * Freezes a parsed JSON value and everything inside it. Iterative, so nesting
+ * that `JSON.parse` accepted cannot overflow the stack here.
+ */
+export function deepFreeze<T>(value: T): T {
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const item = pending.pop();
+    if (item !== null && typeof item === 'object' && !Object.isFrozen(item)) {
+      Object.freeze(item);
+      // One at a time: a spread of a 30 000-element array is an argument list that long.
+      for (const child of Object.values(item)) {
+        pending.push(child);
+      }
+    }
+  }
+  return value;
+}
+
 export function isPlainObject(value: unknown): value is JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return false;

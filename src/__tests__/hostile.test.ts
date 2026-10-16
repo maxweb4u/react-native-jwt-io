@@ -36,9 +36,16 @@ describe('shape (SC-6): malformed tokens fail before any crypto runs', () => {
     ['header has no alg', `${segment({ typ: 'JWT' })}.${goodPayload}.${goodSignature}`],
     ['header alg is not a string', `${segment({ alg: 256 })}.${goodPayload}.${goodSignature}`],
     ['payload is not UTF-8', `${goodHeader}.${b64u(Uint8Array.of(0x7b, 0xc0, 0x80, 0x7d))}.${goodSignature}`],
-    ['oversized', `${goodHeader}.${'A'.repeat(70000)}.${goodSignature}`],
   ])('%s', (_name, token) => {
     expect(() => verify(token as string, SECRET_32)).toThrow(code('ERR_JWT_MALFORMED'));
+  });
+
+  it('refuses a token over the length limit before decoding it, even a well-formed one', () => {
+    const big = hs256('{"alg":"HS256"}', JSON.stringify({ pad: 'x'.repeat(50000) }));
+    expect(big.length).toBeGreaterThan(65536);
+    expect(() => verify(big, SECRET_32)).toThrow(/longer than 65536/);
+    const fits = hs256('{"alg":"HS256"}', JSON.stringify({ pad: 'x'.repeat(40000) }));
+    expect(verify(fits, SECRET_32).payload.pad).toHaveLength(40000);
   });
 
   it('names JWE when it sees five segments', () => {

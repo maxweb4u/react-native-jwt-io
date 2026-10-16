@@ -1,5 +1,5 @@
 // Must stay the first import: it checks the engine before the crypto
-// dependencies load. See memory_bank/adr/ADR-005-host-requirements.md.
+// dependencies load. See memory_bank/adr/ADR-007-host-requirements-text-encoder.md.
 import './host/hostCheck';
 import { legacyDefaultExport } from './jwt/legacy';
 
@@ -13,7 +13,7 @@ export { getExpiration, isExpired } from './jwt/expiry';
 
 export { importPEM, type ImportOptions } from './keys/pem';
 export { importJWK } from './keys/jwk';
-export { createJWKS, type CreateJwksOptions, type JwtKeySet } from './keys/jwks';
+export { createJWKS, type CreateJwksOptions, type JwtKeySet, type SkippedJwk } from './keys/jwks';
 export { type JwtKey, type KeyType } from './keys/JwtKey';
 export { type KeyInput } from './keys/resolveKey';
 export { hexToBytes } from './utils/bytes';

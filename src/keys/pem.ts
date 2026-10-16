@@ -3,6 +3,8 @@ import { JwtKeyError } from '../errors/errors';
 import { type Algorithm, isAlgorithm } from '../types/algorithm';
 import { base64Decode } from '../utils/base64';
 import { equalBytes } from '../utils/bytes';
+import { describeValue } from '../utils/describe';
+import { assertKnownOptions } from '../utils/options';
 import {
   DerError,
   type DerNode,
@@ -22,7 +24,14 @@ const OID = {
   rsassaPss: '1.2.840.113549.1.1.10',
   ecPublicKey: '1.2.840.10045.2.1',
   ed25519: '1.3.101.112',
+  mgf1: '1.2.840.113549.1.1.8',
 } as const;
+
+const SHA2_BY_OID: Record<string, 256 | 384 | 512> = {
+  '2.16.840.1.101.3.4.2.1': 256,
+  '2.16.840.1.101.3.4.2.2': 384,
+  '2.16.840.1.101.3.4.2.3': 512,
+};
 
 const CURVE_BY_OID: Record<string, EcCurve> = {
   '1.2.840.10045.3.1.7': 'P-256',
@@ -44,7 +53,9 @@ export interface ImportOptions {
  * encrypted keys are refused. See memory_bank/domain/keys.md.
  */
 export function importPEM(pem: string, algorithm: Algorithm, options: ImportOptions = {}): JwtKey {
-  const kid = (options ?? {}).kid;
+  const opts: ImportOptions = options ?? {};
+  assertKnownOptions(opts, ['kid'], (_name, message) => new JwtKeyError(message));
+  const kid = opts.kid;
   if (kid !== undefined && typeof kid !== 'string') {
     throw new JwtKeyError('The "kid" option must be a string.');
   }
@@ -52,7 +63,7 @@ export function importPEM(pem: string, algorithm: Algorithm, options: ImportOpti
     throw new JwtKeyError('importPEM expects the PEM text as a string.');
   }
   if (!isAlgorithm(algorithm)) {
-    throw new JwtKeyError(`importPEM needs the key's algorithm, such as 'RS256' or 'ES256'; got ${String(algorithm)}.`);
+    throw new JwtKeyError(`importPEM needs the key's algorithm, such as 'RS256' or 'ES256'; got ${describeValue(algorithm)}.`);
   }
   if (algorithm.startsWith('HS')) {
     throw new JwtKeyError('HMAC secrets are not PEM keys. Pass the secret itself as a string or Uint8Array.');
@@ -70,13 +81,20 @@ export function importPEM(pem: string, algorithm: Algorithm, options: ImportOpti
   if (parsed.pssOnly && !algorithm.startsWith('PS')) {
     throw new JwtKeyError(`This is an RSASSA-PSS key (OID ${OID.rsassaPss}); it can only be used for PS256, PS384 or PS512.`);
   }
+  if (parsed.pssHash !== undefined && algorithm !== `PS${parsed.pssHash}`) {
+    throw new JwtKeyError(`This RSASSA-PSS key is restricted to SHA-${parsed.pssHash}; it can only be used for PS${parsed.pssHash}.`);
+  }
   return createKey(parsed.material, algorithm, kid);
 }
 
-/** `pssOnly`: the key's own OID restricts it to RSASSA-PSS (RFC 4055). */
+/**
+ * `pssOnly`: the key's own OID restricts it to RSASSA-PSS (RFC 4055).
+ * `pssHash`: its parameters restrict it further, to one hash.
+ */
 interface Parsed {
   readonly material: KeyMaterial;
   readonly pssOnly?: boolean;
+  readonly pssHash?: 256 | 384 | 512;
 }
 
 function readPem(pem: string): { label: string; der: Uint8Array } {
@@ -86,6 +104,9 @@ function readPem(pem: string): { label: string; der: Uint8Array } {
   }
   const label = match[1] as string;
   const body = match[2] as string;
+  if (body.includes('-----')) {
+    throw new JwtKeyError('The key is not a single PEM block (-----BEGIN …----- / -----END …-----).');
+  }
   if (label === 'CERTIFICATE') {
     throw new JwtKeyError('X.509 certificates are not supported. Extract the public key (openssl x509 -pubkey -noout) and import that.');
   }
@@ -97,6 +118,43 @@ function readPem(pem: string): { label: string; der: Uint8Array } {
     throw new JwtKeyError(`The ${label} PEM body is not valid base64.`);
   }
   return { label, der };
+}
+
+const DER_LABELS = ['PUBLIC KEY', 'PRIVATE KEY', 'RSA PUBLIC KEY', 'RSA PRIVATE KEY', 'EC PRIVATE KEY'];
+
+/**
+ * Whether `der` is a key in one of the formats `importPEM` reads — used to
+ * refuse key material passed as an HMAC secret. Never throws. A key of an
+ * unsupported algorithm or curve still counts: it is a key either way.
+ */
+export function isKeyDer(der: Uint8Array): boolean {
+  // Cheap gate first: a key is one SEQUENCE spanning the whole input. Random
+  // secret bytes pass it about once in 65,000 tries, and then fail to parse.
+  if (der[0] !== DerTag.Sequence) {
+    return false;
+  }
+  let children: DerNode[];
+  try {
+    children = readNodes(readSingle(der, DerTag.Sequence).content);
+  } catch {
+    return false;
+  }
+  // An X.509 certificate: tbsCertificate, signatureAlgorithm, signature. It
+  // carries a public key, so it is no more a secret than the key is.
+  if (children.length === 3 && children[0]?.tag === DerTag.Sequence && children[1]?.tag === DerTag.Sequence && children[2]?.tag === DerTag.BitString) {
+    return true;
+  }
+  for (const label of DER_LABELS) {
+    try {
+      parseByLabel(label, der);
+      return true;
+    } catch (error) {
+      if (error instanceof JwtKeyError) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function parseByLabel(label: string, der: Uint8Array): Parsed {
@@ -128,7 +186,7 @@ function parseSpki(der: Uint8Array): Parsed {
     return { material: parseRsaPublicKey(keyBytes) };
   }
   if (oid === OID.rsassaPss) {
-    return { material: parseRsaPublicKey(keyBytes), pssOnly: true };
+    return { material: parseRsaPublicKey(keyBytes), pssOnly: true, pssHash: pssRestriction(parameters) };
   }
   if (oid === OID.ecPublicKey) {
     const curve = curveOf(parameters);
@@ -158,25 +216,38 @@ function parsePkcs8(der: Uint8Array): Parsed {
   if (v !== BigInt(0) && v !== BigInt(1)) {
     throw new DerError('unsupported PKCS#8 version');
   }
+  // [0] attributes, then [1] public key (v2 only): each at most once, in that order.
   let embeddedPublic: Uint8Array | undefined;
+  let previous = -1;
   for (const node of optional) {
-    if (node.tag === 0x81 && v === BigInt(1)) {
-      embeddedPublic = node.content.length > 0 && node.content[0] === 0 ? node.content.subarray(1) : undefined;
-    } else if (node.tag !== DerTag.ContextSpecific0) {
+    const index =
+      node.tag === DerTag.ContextSpecific0 ? 0 : node.tag === DerTag.ContextSpecific1Primitive && v === BigInt(1) ? 1 : -1;
+    if (index <= previous) {
       throw new DerError('unexpected data after the private key');
+    }
+    previous = index;
+    if (index === 1) {
+      if (node.content.length < 2 || node.content[0] !== 0) {
+        throw new DerError('the embedded public key is not a byte-aligned BIT STRING');
+      }
+      embeddedPublic = node.content.subarray(1);
     }
   }
   const { oid, parameters } = readAlgorithmIdentifier(algorithmId);
   const inner = expectTag(privateKey, DerTag.OctetString).content;
   if (oid === OID.rsaEncryption) {
     expectNoParameters(parameters);
-    return { material: parseRsaPrivateKey(inner) };
+    return { material: withEmbeddedPublic(parseRsaPrivateKey(inner), embeddedPublic) };
   }
   if (oid === OID.rsassaPss) {
-    return { material: parseRsaPrivateKey(inner), pssOnly: true };
+    return {
+      material: withEmbeddedPublic(parseRsaPrivateKey(inner), embeddedPublic),
+      pssOnly: true,
+      pssHash: pssRestriction(parameters),
+    };
   }
   if (oid === OID.ecPublicKey) {
-    return { material: parseEcPrivateKey(inner, curveOf(parameters)) };
+    return { material: withEmbeddedPublic(parseEcPrivateKey(inner, curveOf(parameters)), embeddedPublic) };
   }
   if (oid === OID.ed25519) {
     if (parameters !== undefined) {
@@ -187,15 +258,97 @@ function parsePkcs8(der: Uint8Array): Parsed {
     if (!publicKey) {
       throw new DerError('the Ed25519 private key must be 32 bytes');
     }
-    if (embeddedPublic && !equalBytes(embeddedPublic, publicKey)) {
-      throw new DerError('the embedded public key does not match the private key');
-    }
-    return { material: { kind: 'okp', curve: 'Ed25519', publicKey, privateKey: seed.slice() } };
+    return { material: withEmbeddedPublic({ kind: 'okp', curve: 'Ed25519', publicKey, privateKey: seed.slice() }, embeddedPublic) };
   }
   throw new JwtKeyError(`Unsupported key algorithm (OID ${oid}).`);
 }
 
-function parseRsaPublicKey(der: Uint8Array): KeyMaterial {
+/** RFC 5958 §2: a v2 key's own copy of its public key must be that key's public key. */
+function withEmbeddedPublic(material: KeyMaterial, embedded: Uint8Array | undefined): KeyMaterial {
+  if (embedded === undefined) {
+    return material;
+  }
+  let matches: boolean;
+  switch (material.kind) {
+    case 'rsa': {
+      const embeddedRsa = parseRsaPublicKey(embedded);
+      matches = embeddedRsa.n === material.n && embeddedRsa.e === material.e;
+      break;
+    }
+    case 'ec': {
+      const normalized = normalizeEcPublicKey(material.curve, embedded);
+      matches = normalized !== null && equalBytes(normalized, material.publicKey);
+      break;
+    }
+    case 'okp':
+      matches = equalBytes(embedded, material.publicKey);
+      break;
+    default:
+      matches = false;
+  }
+  if (!matches) {
+    throw new DerError('the embedded public key does not match the private key');
+  }
+  return material;
+}
+
+/**
+ * RSASSA-PSS-params (RFC 4055 §3.1). Absent parameters leave the key
+ * unrestricted. Present ones bind it to one hash: they must name a SHA-2 hash,
+ * MGF1 with the same hash, a salt no longer than the hash (RFC 7518 §3.5
+ * signs with exactly that), and the standard trailer.
+ */
+function pssRestriction(parameters: DerNode | undefined): 256 | 384 | 512 | undefined {
+  if (parameters === undefined) {
+    return undefined;
+  }
+  let hash: number | undefined;
+  let mgfHash: number | undefined;
+  let saltLength = BigInt(20);
+  let previous = -1;
+  for (const node of readNodes(expectTag(parameters, DerTag.Sequence).content)) {
+    const index = [DerTag.ContextSpecific0, DerTag.ContextSpecific1, DerTag.ContextSpecific2, DerTag.ContextSpecific3].indexOf(
+      node.tag as 0xa0,
+    );
+    if (index <= previous) {
+      throw new DerError('malformed RSASSA-PSS parameters');
+    }
+    previous = index;
+    if (index === 0) {
+      hash = sha2Of(readSingle(node.content, DerTag.Sequence));
+    } else if (index === 1) {
+      const mgf = readAlgorithmIdentifier(readSingle(node.content, DerTag.Sequence));
+      if (mgf.oid !== OID.mgf1) {
+        throw new DerError('the RSASSA-PSS mask generation function is not MGF1');
+      }
+      mgfHash = sha2Of(mgf.parameters);
+    } else if (index === 2) {
+      saltLength = readUnsignedInteger(readSingle(node.content, DerTag.Integer));
+    } else if (readUnsignedInteger(readSingle(node.content, DerTag.Integer)) !== BigInt(1)) {
+      throw new DerError('unsupported RSASSA-PSS trailer field');
+    }
+  }
+  // The defaults are SHA-1, which JWS does not use.
+  if (hash === undefined || mgfHash !== hash) {
+    throw new DerError('the RSASSA-PSS parameters do not name one SHA-2 hash for both the digest and MGF1');
+  }
+  if (saltLength > BigInt(hash / 8)) {
+    throw new DerError(`the RSASSA-PSS key requires a salt longer than ${hash / 8} bytes`);
+  }
+  return hash as 256 | 384 | 512;
+}
+
+function sha2Of(node: DerNode | undefined): number {
+  const { oid, parameters } = readAlgorithmIdentifier(node);
+  expectNoParameters(parameters);
+  const bits = SHA2_BY_OID[oid];
+  if (bits === undefined) {
+    throw new DerError(`unsupported RSASSA-PSS hash (OID ${oid})`);
+  }
+  return bits;
+}
+
+function parseRsaPublicKey(der: Uint8Array): Extract<KeyMaterial, { kind: 'rsa' }> {
   const [n, e, extra] = readNodes(readSingle(der, DerTag.Sequence).content);
   if (extra) {
     throw new DerError('trailing data');
@@ -226,17 +379,22 @@ function parseEcPrivateKey(der: Uint8Array, outerCurve: EcCurve | undefined): Ke
   let d = expectTag(privateKey, DerTag.OctetString).content;
   let curve = outerCurve;
   let embeddedPublic: Uint8Array | undefined;
+  let previous = -1;
   for (const node of optional) {
-    if (node.tag === DerTag.ContextSpecific0) {
+    // [0] parameters, then [1] public key: each at most once, in that order.
+    const index = node.tag === DerTag.ContextSpecific0 ? 0 : node.tag === DerTag.ContextSpecific1 ? 1 : -1;
+    if (index <= previous) {
+      throw new DerError('unexpected data in the EC private key');
+    }
+    previous = index;
+    if (index === 0) {
       const inner = curveOf(readSingle(node.content, DerTag.Oid));
       if (curve !== undefined && inner !== curve) {
         throw new DerError('the curve parameters disagree');
       }
       curve = inner;
-    } else if (node.tag === DerTag.ContextSpecific1) {
-      embeddedPublic = readBitStringBytes(readSingle(node.content, DerTag.BitString));
     } else {
-      throw new DerError('unexpected data in the EC private key');
+      embeddedPublic = readBitStringBytes(readSingle(node.content, DerTag.BitString));
     }
   }
   if (curve === undefined) {

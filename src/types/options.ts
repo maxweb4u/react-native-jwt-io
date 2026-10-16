@@ -1,15 +1,16 @@
-import { type HmacAlgorithm } from './algorithm';
+import { type Algorithm } from './algorithm';
 
 /** Seconds, or a string such as `'90s'`, `'15m'`, `'2h'`, `'7d'`. */
 export type Duration = number | string;
 
 interface SecretOptions {
   /**
-   * The algorithm for a bare string or `Uint8Array` secret. Default `HS256`.
-   * An imported key carries its own algorithm; passing a different one here is
-   * an error. See memory_bank/adr/ADR-003-one-key-one-algorithm.md.
+   * For a bare string or `Uint8Array` secret: which HMAC, HS256 by default.
+   * An imported key carries its own algorithm; passing a different one is an
+   * error. In `verify` the token's `alg` must equal it too, for a key set as
+   * for a single key. See memory_bank/adr/ADR-003-one-key-one-algorithm.md.
    */
-  readonly algorithm?: HmacAlgorithm;
+  readonly algorithm?: Algorithm;
   /**
    * Accept an HMAC secret shorter than the hash output (RFC 7518 §3.2). For
    * legacy issuers whose secret you do not control; never for new secrets.
@@ -30,7 +31,7 @@ export interface SignOptions extends SecretOptions {
   readonly keyId?: string;
   /** Extra header parameters. `alg`, `crit` and `b64` cannot be set here. */
   readonly header?: Readonly<Record<string, unknown>>;
-  /** Omit `iat`. By default `iat` is the signing time. */
+  /** Do not add `iat`. By default `iat` is the signing time; an `iat` already in the payload is kept either way. */
   readonly noTimestamp?: boolean;
   /** The signing time. Defaults to now. */
   readonly now?: Date;
@@ -50,11 +51,11 @@ export interface VerifyOptions extends SecretOptions, ClockOptions {
   readonly audience?: string | readonly string[];
   /** `sub` must equal this. */
   readonly subject?: string;
-  /** Header `typ` must match, ignoring case and an `application/` prefix. */
+  /** Header `typ` must match, ignoring case; `JWT` and `application/JWT` are the same (RFC 7515 §4.1.9). */
   readonly typ?: string;
   /** These claims must be present. */
   readonly requiredClaims?: readonly string[];
-  /** The token must not be older than this, measured from `iat`, which then becomes required. */
+  /** The token must be younger than this, measured from `iat`, which then becomes required. */
   readonly maxTokenAge?: Duration;
   /** Skip the `exp` check. The signature is still verified. */
   readonly ignoreExpiration?: boolean;

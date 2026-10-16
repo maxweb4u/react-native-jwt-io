@@ -1,7 +1,7 @@
 import { JwtMalformedError } from '../errors/errors';
 import { type JwtHeader, type JwtPayload } from '../types/jwt';
 import { base64UrlDecode } from '../utils/base64';
-import { isPlainObject, parseJson } from '../utils/json';
+import { deepFreeze, isPlainObject, parseJson } from '../utils/json';
 import { utf8Decode, utf8Encode } from '../utils/utf8';
 import { validateRegisteredClaims } from './claims';
 
@@ -51,8 +51,9 @@ export function parseToken(token: unknown): ParsedToken {
     throw new JwtMalformedError('The signature segment is not valid base64url.');
   }
   return {
-    header: Object.freeze(header) as JwtHeader,
-    payload: Object.freeze(payload) as JwtPayload,
+    // Deeply: a verified `aud` array must not be editable after the check.
+    header: deepFreeze(header) as JwtHeader,
+    payload: deepFreeze(payload) as JwtPayload,
     // The segments are base64url, so this is ASCII.
     signingInput: utf8Encode(`${headerPart}.${payloadPart}`),
     signature,

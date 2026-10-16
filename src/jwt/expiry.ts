@@ -1,6 +1,8 @@
+import { JwtClaimError } from '../errors/errors';
 import { type ClockOptions } from '../types/options';
+import { assertKnownOptions } from '../utils/options';
 import { fromNumericDate } from '../utils/time';
-import { currentSeconds, durationOption, numericClaim } from './claims';
+import { clockToleranceOption, currentSeconds, numericClaim } from './claims';
 import { parseToken } from './parse';
 
 /**
@@ -8,12 +10,14 @@ import { parseToken } from './parse';
  * The signature is **not** checked: this is for deciding when to refresh.
  */
 export function isExpired(token: string, options: ClockOptions = {}): boolean {
+  const opts: ClockOptions = options ?? {};
+  assertKnownOptions(opts, ['clockTolerance', 'now'], (name, message) => new JwtClaimError(name, message));
   const exp = numericClaim(parseToken(token).payload, 'exp');
   if (exp === undefined) {
     return false;
   }
-  const now = currentSeconds((options ?? {}).now);
-  const tolerance = durationOption((options ?? {}).clockTolerance, 'clockTolerance') ?? 0;
+  const now = currentSeconds(opts.now);
+  const tolerance = clockToleranceOption(opts.clockTolerance);
   return now - tolerance >= exp;
 }
 

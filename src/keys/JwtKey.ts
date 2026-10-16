@@ -39,6 +39,13 @@ const EC_CURVE_FOR: Partial<Record<Algorithm, EcCurve>> = {
 };
 
 export const MIN_RSA_BITS = 2048;
+/** micro-rsa-dsa-dh refuses larger moduli at every operation; refusing them at import says why. */
+export const MAX_RSA_BITS = 16384;
+/**
+ * As BoringSSL allows. Real keys use 65537; a huge exponent from a hostile
+ * JWKS would only make every verification slow (2^256 - 1 is 45 times slower).
+ */
+export const MAX_RSA_EXPONENT_BITS = 33;
 
 /** Throws unless `material` is usable with `algorithm`. */
 export function assertKeyFitsAlgorithm(material: KeyMaterial, algorithm: Algorithm): void {
@@ -57,11 +64,18 @@ export function assertKeyFitsAlgorithm(material: KeyMaterial, algorithm: Algorit
     if (bitLength(material.n) < MIN_RSA_BITS) {
       throw new JwtKeyError(`RSA keys must be at least ${MIN_RSA_BITS} bits; this one is ${bitLength(material.n)}.`);
     }
+    if (bitLength(material.n) > MAX_RSA_BITS) {
+      throw new JwtKeyError(`RSA keys larger than ${MAX_RSA_BITS} bits are not supported; this one is ${bitLength(material.n)}.`);
+    }
+    if (bitLength(material.e) > MAX_RSA_EXPONENT_BITS) {
+      throw new JwtKeyError(`RSA public exponents above ${MAX_RSA_EXPONENT_BITS} bits are not supported.`);
+    }
     if (material.n % BigInt(2) === BigInt(0)) {
       throw new JwtKeyError('The RSA modulus must be odd.');
     }
-    if (material.e < BigInt(3) || material.e % BigInt(2) === BigInt(0) || material.e >= material.n) {
-      throw new JwtKeyError('The RSA public exponent must be odd, at least 3, and below the modulus.');
+    // Below the modulus too, since the modulus has at least 2048 bits.
+    if (material.e < BigInt(3) || material.e % BigInt(2) === BigInt(0)) {
+      throw new JwtKeyError('The RSA public exponent must be odd and at least 3.');
     }
     if (material.d !== undefined && (material.d <= BigInt(1) || material.d >= material.n)) {
       throw new JwtKeyError('The RSA private exponent is out of range for its modulus.');

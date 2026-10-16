@@ -91,6 +91,14 @@ export function nodeVerify(alg: Algorithm, key: KeyObject | string, token: strin
   return crypto.verify(alg === 'EdDSA' ? null : hashName(alg), input, nodeSignOptions(alg, k), signature);
 }
 
+/** One DER TLV, its length in the shortest form, as test inputs are built by hand. */
+export function tlv(tag: number, ...parts: Uint8Array[]): Uint8Array {
+  const content = Buffer.concat(parts);
+  const n = content.length;
+  const length = n < 0x80 ? [n] : n < 0x100 ? [0x81, n] : [0x82, n >> 8, n & 0xff];
+  return Buffer.concat([Uint8Array.of(tag, ...length), content]);
+}
+
 export const SECRET_32 = 'a-32-byte-secret-for-hs256-tests';
 export const SECRET_48 = 'a-48-byte-secret-for-hs384-tests-padding-padding';
 export const SECRET_64 = 'a-64-byte-secret-for-hs512-tests-padding-padding-padding-padding';

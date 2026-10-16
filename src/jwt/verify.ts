@@ -1,12 +1,29 @@
 import { verifyBytes } from '../crypto/backend';
-import { JwtAlgorithmError, JwtMalformedError, JwtSignatureError } from '../errors/errors';
+import { JwtAlgorithmError, JwtClaimError, JwtMalformedError, JwtSignatureError } from '../errors/errors';
 import { isJwtKeySet, type JwtKeySet, selectKey } from '../keys/jwks';
 import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { isAlgorithm } from '../types/algorithm';
 import { type DecodedJwt, type JwtPayload } from '../types/jwt';
 import { type VerifyOptions } from '../types/options';
+import { describeValue } from '../utils/describe';
+import { assertKnownOptions } from '../utils/options';
 import { validateClaims } from './claims';
 import { parseToken } from './parse';
+
+const VERIFY_OPTIONS = [
+  'algorithm',
+  'allowShortSecret',
+  'clockTolerance',
+  'now',
+  'issuer',
+  'audience',
+  'subject',
+  'typ',
+  'requiredClaims',
+  'maxTokenAge',
+  'ignoreExpiration',
+  'ignoreNotBefore',
+];
 
 /**
  * Verifies the signature, then the claims, and returns the decoded token.
@@ -21,8 +38,9 @@ export function verify<TPayload = JwtPayload>(
   key: KeyInput | JwtKeySet,
   options: VerifyOptions = {},
 ): DecodedJwt<TPayload> {
-  const { header, payload, signingInput, signature } = parseToken(token);
   const opts: VerifyOptions = options ?? {};
+  assertKnownOptions(opts, VERIFY_OPTIONS, (name, message) => new JwtClaimError(name, message));
+  const { header, payload, signingInput, signature } = parseToken(token);
 
   const alg = header.alg as string;
   if (alg.toLowerCase() === 'none') {
@@ -39,9 +57,12 @@ export function verify<TPayload = JwtPayload>(
     throw new JwtMalformedError('Unencoded payloads ("b64", RFC 7797) are not supported.');
   }
 
+  // `algorithm` pins the token's alg, for a key set as for a single key —
+  // checked before the set is searched, so the error names the real cause.
+  if (opts.algorithm !== undefined && opts.algorithm !== alg) {
+    throw new JwtAlgorithmError(`The token is signed with ${alg}, but options.algorithm is ${describeValue(opts.algorithm)}.`);
+  }
   const chosen = isJwtKeySet(key) ? selectKey(key, header.kid, alg) : key;
-  // `algorithm` constrains a key set too: a token whose key in the set is
-  // for another algorithm fails, rather than the option being ignored.
   const resolved = resolveKey(chosen, opts.algorithm);
   if (resolved.algorithm !== alg) {
     throw new JwtAlgorithmError(`The token is signed with ${alg}, but the key is for ${resolved.algorithm}.`);

@@ -141,14 +141,27 @@ describe('createJWKS (SC-10, FM-2)', () => {
 
   it('needs an algorithm for RSA keys published without alg', () => {
     const bare = { ...jwkOf(rsa.publicKey), kid: 'azure-style' };
-    expect(() => createJWKS({ keys: [bare] })).toThrow(/azure-style/);
+    const without = createJWKS({ keys: [bare] });
+    expect(without.keys).toHaveLength(0);
+    expect(without.skipped).toEqual([{ index: 0, kid: 'azure-style', reason: expect.stringMatching(/has no "alg"/) }]);
     expect(createJWKS({ keys: [bare] }, { algorithm: 'RS256' }).keys[0]?.algorithm).toBe('RS256');
   });
 
-  it('refuses a malformed supported key rather than skipping it', () => {
-    expect(() => createJWKS({ keys: [{ kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' }] })).toThrow(code('ERR_JWT_KEY_INVALID'));
+  it('skips a malformed supported key with its reason, and names it when a token asks for it', () => {
+    const good = { ...jwkOf(ec.publicKey), kid: 'good' };
+    const set = createJWKS({ keys: [{ kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA', kid: 'bad' }, good] });
+    expect(set.keys.map((k) => k.kid)).toEqual(['good']);
+    expect(set.skipped).toEqual([{ index: 0, kid: 'bad', reason: expect.stringMatching(/must be 32 bytes/) }]);
+    const bad = sign({}, importJWK({ ...jwkOf(ec.privateKey), kid: 'bad' }));
+    expect(() => verify(bad, set)).toThrow(/kid "bad" is in the set but could not be imported: The JWK "x" must be 32 bytes/);
+    expect(() => verify(bad, set)).toThrow(code('ERR_JWT_KEY_INVALID'));
+    expect(verify(sign({ ok: 1 }, importJWK({ ...jwkOf(ec.privateKey), kid: 'good' })), set).payload.ok).toBe(1);
+  });
+
+  it('refuses what is not a JWKS at all', () => {
     // @ts-expect-error not a JWKS
     expect(() => createJWKS([k1])).toThrow(code('ERR_JWT_KEY_INVALID'));
+    expect(() => createJWKS({ keys: [5] } as never)).toThrow(/is not an object/);
   });
 });
 
@@ -164,13 +177,13 @@ describe('using keys', () => {
 
   it('a key cannot be used under another algorithm', () => {
     const key = importPEM(pem(rsa.privateKey), 'RS256');
-    // @ts-expect-error algorithm applies to bare secrets only
     expect(() => sign({}, key, { algorithm: 'RS512' })).toThrow(code('ERR_JWT_ALGORITHM'));
   });
 });
 
 describe('DER parsing under corruption', () => {
-  // Deterministic, so a failure reproduces.
+  // The corruptions are deterministic; the keys are generated on each run, so
+  // a failure reports the corrupted PEM itself, to reproduce from.
   let seed = 42;
   const random = (max: number) => {
     seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -194,10 +207,11 @@ describe('DER parsing under corruption', () => {
         bytes[random(bytes.length)] = random(256);
       }
       const cut = round % 3 === 0 ? bytes.subarray(0, random(bytes.length)) : bytes;
+      const input = toPem(label, cut);
       try {
-        importPEM(toPem(label, cut), alg);
+        importPEM(input, alg);
       } catch (error) {
-        expect(error).toEqual(code('ERR_JWT_KEY_INVALID'));
+        expect({ input, error }).toEqual({ input, error: code('ERR_JWT_KEY_INVALID') });
       }
     }
   });

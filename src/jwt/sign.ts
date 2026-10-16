@@ -4,11 +4,27 @@ import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolve
 import { type SignOptions } from '../types/options';
 import { base64UrlEncode } from '../utils/base64';
 import { isPlainObject, parseJson } from '../utils/json';
+import { assertKnownOptions } from '../utils/options';
 import { MAX_PLAUSIBLE_NUMERIC_DATE } from '../utils/time';
 import { utf8Encode } from '../utils/utf8';
 import { currentSeconds, durationOption, stringList, validateRegisteredClaims } from './claims';
 
 const RESERVED_HEADER = ['alg', 'crit', 'b64'];
+const STRING_HEADER = ['typ', 'cty', 'kid'] as const;
+const SIGN_OPTIONS = [
+  'algorithm',
+  'allowShortSecret',
+  'expiresIn',
+  'notBefore',
+  'issuer',
+  'audience',
+  'subject',
+  'jwtId',
+  'keyId',
+  'header',
+  'noTimestamp',
+  'now',
+];
 
 /**
  * Signs `payload` and returns a compact JWS.
@@ -16,8 +32,9 @@ const RESERVED_HEADER = ['alg', 'crit', 'b64'];
  * `iat` is set to the signing time unless `noTimestamp` is given. Time claims
  * are seconds; a value that looks like milliseconds is refused.
  */
-export function sign(payload: Record<string, unknown>, key: KeyInput, options: SignOptions = {}): string {
+export function sign(payload: object, key: KeyInput, options: SignOptions = {}): string {
   const opts: SignOptions = options ?? {};
+  assertKnownOptions(opts, SIGN_OPTIONS, (name, message) => new JwtClaimError(name, message));
   if (!isPlainObject(payload)) {
     throw new JwtClaimError('payload', 'The payload must be a plain object.');
   }
@@ -64,6 +81,12 @@ export function sign(payload: Record<string, unknown>, key: KeyInput, options: S
     RESERVED_HEADER.slice(1).some((name) => name in headerEcho)
   ) {
     throw new JwtClaimError('header', 'The header does not serialize to the header that was built (a toJSON method?).');
+  }
+  // verify refuses these when they are not strings; sign must not issue such a token.
+  for (const name of STRING_HEADER) {
+    if (headerEcho[name] !== undefined && typeof headerEcho[name] !== 'string') {
+      throw new JwtClaimError(`header.${name}`, `The header "${name}" must be a string.`);
+    }
   }
   const payloadText = serialize(claims, 'payload');
   const payloadEcho = parseJson(payloadText);

@@ -46,12 +46,26 @@ export function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
+/**
+ * Big-endian bytes to a BigInt, through one hex string: linear, where
+ * shifting in a byte at a time is quadratic — half a second for a 48 KB field
+ * in a hostile JWK, before any size check could run.
+ */
 export function bytesToBigInt(bytes: Uint8Array): bigint {
-  let value = BigInt(0);
+  let hex = '';
   for (const byte of bytes) {
-    value = (value << BigInt(8)) | BigInt(byte);
+    hex += (byte < 16 ? '0' : '') + byte.toString(16);
   }
-  return value;
+  return hex === '' ? BigInt(0) : BigInt(`0x${hex}`);
+}
+
+/** The length of `bytes` without its leading zero bytes. */
+export function significantLength(bytes: Uint8Array): number {
+  let start = 0;
+  while (start < bytes.length && bytes[start] === 0) {
+    start++;
+  }
+  return bytes.length - start;
 }
 
 export function bitLength(value: bigint): number {

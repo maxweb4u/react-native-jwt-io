@@ -1,7 +1,7 @@
 import { JwtClaimError, JwtExpiredError, JwtNotBeforeError } from '../errors/errors';
 import { type JwtHeader, type JwtPayload } from '../types/jwt';
 import { type Duration, type VerifyOptions } from '../types/options';
-import { fromNumericDate, parseDuration } from '../utils/time';
+import { fromNumericDate, MAX_CLOCK_TOLERANCE_SECONDS, MAX_DATE_SECONDS, parseDuration } from '../utils/time';
 
 /**
  * Claim rules, applied only after the signature holds.
@@ -9,7 +9,7 @@ import { fromNumericDate, parseDuration } from '../utils/time';
  */
 export function validateClaims(header: JwtHeader, payload: JwtPayload, options: VerifyOptions): void {
   const now = currentSeconds(options.now);
-  const tolerance = durationOption(options.clockTolerance, 'clockTolerance') ?? 0;
+  const tolerance = clockToleranceOption(options.clockTolerance);
 
   // Compared against the exact time, not the second it falls in: a
   // fractional exp must not live up to a second longer than it says.
@@ -30,7 +30,8 @@ export function validateClaims(header: JwtHeader, payload: JwtPayload, options: 
     if (iat === undefined) {
       throw new JwtClaimError('iat', '"maxTokenAge" was given, but the token has no "iat".');
     }
-    if (now - tolerance > iat + maxAge) {
+    // Like exp: at exactly iat + maxTokenAge the token is too old.
+    if (now - tolerance >= iat + maxAge) {
       throw new JwtExpiredError(`The token is older than maxTokenAge (${options.maxTokenAge}).`, fromNumericDate(iat + maxAge));
     }
   }
@@ -44,6 +45,9 @@ export function validateClaims(header: JwtHeader, payload: JwtPayload, options: 
     if (!actual.some((aud) => expected.includes(aud))) {
       throw new JwtClaimError('aud', `Unexpected audience ${JSON.stringify(payload.aud)}.`);
     }
+  }
+  if (options.subject !== undefined && typeof options.subject !== 'string') {
+    throw new JwtClaimError('sub', 'The "subject" option must be a string.');
   }
   if (options.subject !== undefined && payload.sub !== options.subject) {
     throw new JwtClaimError('sub', `Unexpected subject ${JSON.stringify(payload.sub)}.`);
@@ -97,7 +101,10 @@ export function validateRegisteredClaims(payload: Record<string, unknown>): void
   }
 }
 
-/** A time claim must be a finite number when present; a string `exp` is not "no expiry". */
+/**
+ * A time claim must be a finite number when present — a string `exp` is not
+ * "no expiry" — and inside the range a Date can represent.
+ */
 export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): number | undefined {
   const value = payload[name];
   if (value === undefined) {
@@ -106,7 +113,22 @@ export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): 
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new JwtClaimError(name, `"${name}" must be a NumericDate (a number of seconds).`);
   }
+  if (Math.abs(value) > MAX_DATE_SECONDS) {
+    throw new JwtClaimError(name, `"${name}" is ${value}, outside the range of dates (±${MAX_DATE_SECONDS} seconds).`);
+  }
   return value;
+}
+
+/** `clockTolerance` in seconds, 0 when absent; at most a day ({@link MAX_CLOCK_TOLERANCE_SECONDS}). */
+export function clockToleranceOption(value: Duration | undefined): number {
+  const seconds = durationOption(value, 'clockTolerance') ?? 0;
+  if (seconds > MAX_CLOCK_TOLERANCE_SECONDS) {
+    throw new JwtClaimError(
+      'clockTolerance',
+      `"clockTolerance" is ${seconds} seconds; the most is ${MAX_CLOCK_TOLERANCE_SECONDS} (a day). Clock skew is seconds or minutes — to accept expired tokens, use ignoreExpiration.`,
+    );
+  }
+  return seconds;
 }
 
 export function durationOption(value: Duration | undefined, name: string): number | undefined {
@@ -131,8 +153,11 @@ export function stringList(value: unknown, name: string): readonly string[] {
   throw new JwtClaimError(name, `"${name}" must be a string or an array of strings.`);
 }
 
-/** RFC 7515 §4.1.9: compare case-insensitively, with the `application/` prefix optional. */
+/**
+ * RFC 7515 §4.1.9: a `typ` without a `/` stands for `application/<typ>`.
+ * Media types compare case-insensitively.
+ */
 function normalizeTyp(typ: string): string {
   const lower = typ.toLowerCase();
-  return lower.startsWith('application/') ? lower.slice('application/'.length) : lower;
+  return lower.includes('/') ? lower : `application/${lower}`;
 }

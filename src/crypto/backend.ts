@@ -45,12 +45,21 @@ export function signBytes(algorithm: Algorithm, material: KeyMaterial, data: Uin
   if (algorithm.startsWith('PS')) {
     assertRandomSource(`${algorithm} signing`);
   }
+  let signature: Uint8Array;
   try {
-    return signWith(algorithm, material, data);
+    signature = signWith(algorithm, material, data);
   } catch (error) {
     // The crypto packages throw plain Errors for keys they cannot use.
     throw new JwtKeyError(`Signing with this ${algorithm} key failed: ${(error as Error).message}`);
   }
+  // An RSA JWK may carry d without the primes, so nothing proved at import
+  // that d belongs to n and e. One public-key operation — about 1% of the
+  // time the signature took — proves it now, instead of issuing a token
+  // nobody can verify.
+  if (material.kind === 'rsa' && !verifyBytes(algorithm, material, data, signature)) {
+    throw new JwtKeyError('The RSA private key does not match its public key: the signature it made does not verify.');
+  }
+  return signature;
 }
 
 function signWith(algorithm: Algorithm, material: KeyMaterial, data: Uint8Array): Uint8Array {

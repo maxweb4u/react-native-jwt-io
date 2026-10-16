@@ -9,9 +9,18 @@ import { JwtKeyError } from '../errors/errors';
 import { type Algorithm, isAlgorithm } from '../types/algorithm';
 import { type Jwk } from '../types/jwt';
 import { base64UrlDecode } from '../utils/base64';
-import { bytesToBigInt, concatBytes, equalBytes } from '../utils/bytes';
+import { bytesToBigInt, concatBytes, equalBytes, significantLength } from '../utils/bytes';
+import { describeValue } from '../utils/describe';
 import { isPlainObject } from '../utils/json';
-import { createKey, type EcCurve, type JwtKey, type KeyMaterial, rsaPrivatePartsMatch } from './JwtKey';
+import {
+  createKey,
+  type EcCurve,
+  type JwtKey,
+  type KeyMaterial,
+  MAX_RSA_BITS,
+  MAX_RSA_EXPONENT_BITS,
+  rsaPrivatePartsMatch,
+} from './JwtKey';
 
 const EC_ALGORITHM: Record<EcCurve, Algorithm> = {
   'P-256': 'ES256',
@@ -25,25 +34,25 @@ const SUPPORTED_CURVES: readonly string[] = Object.keys(EC_ALGORITHM);
 /** Why a JWK cannot be used for signatures at all, or null if it can. Used by `createJWKS` to skip such keys. */
 export function unsupportedReason(jwk: Jwk): string | null {
   if (jwk.use !== undefined && jwk.use !== 'sig') {
-    return `use "${String(jwk.use)}"`;
+    return `use ${describeValue(jwk.use)}`;
   }
   const ops = jwk.key_ops;
   if (ops !== undefined && !(Array.isArray(ops) && ops.some((op) => op === 'sign' || op === 'verify'))) {
-    return `key_ops ${JSON.stringify(ops)}`;
+    return `key_ops ${describeValue(ops)}`;
   }
   if (jwk.alg !== undefined && !isAlgorithm(jwk.alg)) {
-    return `alg "${String(jwk.alg)}"`;
+    return `alg ${describeValue(jwk.alg)}`;
   }
   switch (jwk.kty) {
     case 'RSA':
     case 'oct':
       return null;
     case 'EC':
-      return SUPPORTED_CURVES.includes(String(jwk.crv)) ? null : `curve "${String(jwk.crv)}"`;
+      return typeof jwk.crv === 'string' && SUPPORTED_CURVES.includes(jwk.crv) ? null : `curve ${describeValue(jwk.crv)}`;
     case 'OKP':
-      return jwk.crv === 'Ed25519' ? null : `curve "${String(jwk.crv)}"`;
+      return jwk.crv === 'Ed25519' ? null : `curve ${describeValue(jwk.crv)}`;
     default:
-      return `kty "${String(jwk.kty)}"`;
+      return `kty ${describeValue(jwk.kty)}`;
   }
 }
 
@@ -61,7 +70,7 @@ export function importJWK(jwk: Jwk, algorithm?: Algorithm): JwtKey {
     throw new JwtKeyError(`This JWK cannot be used for JWS signatures (${reason}).`);
   }
   if (algorithm !== undefined && !isAlgorithm(algorithm)) {
-    throw new JwtKeyError(`Unsupported algorithm ${String(algorithm)}.`);
+    throw new JwtKeyError(`Unsupported algorithm ${describeValue(algorithm)}.`);
   }
   if (jwk.alg !== undefined && algorithm !== undefined && jwk.alg !== algorithm) {
     throw new JwtKeyError(`The JWK is for ${jwk.alg}, not ${algorithm}. A key is bound to exactly one algorithm.`);
@@ -101,17 +110,17 @@ function materialOf(jwk: Jwk): KeyMaterial {
       return { kind: 'secret', secret };
     }
     case 'RSA': {
-      const n = bytesToBigInt(member(jwk, 'n'));
-      const e = bytesToBigInt(member(jwk, 'e'));
+      const n = rsaInteger(jwk, 'n', MAX_RSA_BITS);
+      const e = rsaInteger(jwk, 'e', MAX_RSA_EXPONENT_BITS);
       if (jwk.d === undefined) {
         return { kind: 'rsa', n, e };
       }
-      const d = bytesToBigInt(member(jwk, 'd'));
+      const d = rsaInteger(jwk, 'd', MAX_RSA_BITS);
       // RFC 7518 §6.3.2: the primes come with d or not at all. When present,
       // they must produce this n, e and d.
       if (jwk.p !== undefined || jwk.q !== undefined) {
-        const p = bytesToBigInt(member(jwk, 'p'));
-        const q = bytesToBigInt(member(jwk, 'q'));
+        const p = rsaInteger(jwk, 'p', MAX_RSA_BITS);
+        const q = rsaInteger(jwk, 'q', MAX_RSA_BITS);
         if (!rsaPrivatePartsMatch(n, e, d, p, q)) {
           throw new JwtKeyError('The RSA JWK parts do not belong together.');
         }
@@ -153,6 +162,19 @@ function materialOf(jwk: Jwk): KeyMaterial {
       return { kind: 'okp', curve: 'Ed25519', publicKey, privateKey };
     }
   }
+}
+
+/** An RSA JWK integer, its size checked before the conversion, which costs time in proportion to its length. */
+function rsaInteger(jwk: Jwk, name: string, maxBits: number): bigint {
+  const bytes = member(jwk, name);
+  if (significantLength(bytes) > Math.ceil(maxBits / 8)) {
+    throw new JwtKeyError(
+      name === 'e'
+        ? `RSA public exponents above ${maxBits} bits are not supported.`
+        : `RSA keys larger than ${maxBits} bits are not supported; the JWK "${name}" is longer.`,
+    );
+  }
+  return bytesToBigInt(bytes);
 }
 
 function member(jwk: Jwk, name: string, length?: number): Uint8Array {

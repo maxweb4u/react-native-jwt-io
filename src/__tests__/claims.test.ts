@@ -126,8 +126,9 @@ describe('verify: time claims (SC-5)', () => {
 
   it('enforces maxTokenAge from iat, and requires iat for it', () => {
     const issued = sign({}, SECRET_32, { now: at(T) });
-    expect(verify(issued, SECRET_32, { now: at(T + 3600), maxTokenAge: '1h' }).payload.iat).toBe(T);
-    expect(() => verify(issued, SECRET_32, { now: at(T + 3601), maxTokenAge: '1h' })).toThrow(code('ERR_JWT_EXPIRED'));
+    expect(verify(issued, SECRET_32, { now: at(T + 3599.999), maxTokenAge: '1h' }).payload.iat).toBe(T);
+    // The same boundary as exp: at exactly iat + maxTokenAge the token is too old.
+    expect(() => verify(issued, SECRET_32, { now: at(T + 3600), maxTokenAge: '1h' })).toThrow(code('ERR_JWT_EXPIRED'));
     expect(() => verify(sign({}, SECRET_32, { noTimestamp: true }), SECRET_32, { maxTokenAge: 60 })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
   });
 

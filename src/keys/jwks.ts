@@ -2,12 +2,26 @@ import { JwtAlgorithmError, JwtKeyError, JwtKeyNotFoundError } from '../errors/e
 import { type Algorithm } from '../types/algorithm';
 import { type JwkSet } from '../types/jwt';
 import { isPlainObject } from '../utils/json';
+import { assertKnownOptions } from '../utils/options';
 import { importJWK, unsupportedReason } from './jwk';
 import { type JwtKey } from './JwtKey';
 
 /** Keys selected by the token's `kid`, then by `alg`. Create one with `createJWKS`. */
 export interface JwtKeySet {
   readonly keys: readonly JwtKey[];
+  /**
+   * Keys of a supported type that could not be imported (too short, malformed,
+   * an `alg` that contradicts the key). They are left out so the rest of the
+   * set still works; a token whose `kid` names one fails with the reason.
+   */
+  readonly skipped: readonly SkippedJwk[];
+}
+
+export interface SkippedJwk {
+  /** Position in the JWKS `keys` array. */
+  readonly index: number;
+  readonly kid?: string;
+  readonly reason: string;
 }
 
 export interface CreateJwksOptions {
@@ -20,14 +34,19 @@ const keySets = new WeakSet<object>();
 /**
  * A key set from a JWKS object (`{ keys: [...] }`), loaded however the caller
  * likes. Keys that are not for signatures (`use: "enc"`) or of a type this
- * library does not support are skipped; a supported key that is malformed is
- * an error. Remote fetching is planned for 2.1 (memory_bank/product/roadmap.md).
+ * library does not support are left out silently; a supported key that cannot
+ * be imported is left out and listed in `skipped` — one bad key in an
+ * issuer's set must not stop the others from working. Remote fetching is
+ * planned for 2.1 (memory_bank/product/roadmap.md).
  */
 export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKeySet {
   if (!isPlainObject(jwks) || !Array.isArray(jwks.keys)) {
     throw new JwtKeyError('createJWKS expects a JWKS object: { keys: [...] }.');
   }
+  const opts: CreateJwksOptions = options ?? {};
+  assertKnownOptions(opts, ['algorithm'], (_name, message) => new JwtKeyError(message));
   const keys: JwtKey[] = [];
+  const skipped: SkippedJwk[] = [];
   jwks.keys.forEach((jwk, index) => {
     if (!isPlainObject(jwk)) {
       throw new JwtKeyError(`JWKS key #${index} is not an object.`);
@@ -35,18 +54,17 @@ export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKe
     if (unsupportedReason(jwk) !== null) {
       return;
     }
-    const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? options.algorithm : undefined;
+    const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? opts.algorithm : undefined;
     try {
       keys.push(importJWK(jwk, algorithm));
     } catch (error) {
-      if (error instanceof JwtKeyError) {
-        const name = typeof jwk.kid === 'string' ? `"${jwk.kid}"` : `#${index}`;
-        throw new JwtKeyError(`JWKS key ${name}: ${error.message}`);
+      if (!(error instanceof JwtKeyError)) {
+        throw error;
       }
-      throw error;
+      skipped.push(Object.freeze({ index, ...(typeof jwk.kid === 'string' ? { kid: jwk.kid } : {}), reason: error.message }));
     }
   });
-  const set: JwtKeySet = Object.freeze({ keys: Object.freeze(keys) });
+  const set: JwtKeySet = Object.freeze({ keys: Object.freeze(keys), skipped: Object.freeze(skipped) });
   keySets.add(set);
   return set;
 }
@@ -64,6 +82,10 @@ export function selectKey(set: JwtKeySet, kid: string | undefined, alg: Algorith
   if (kid !== undefined) {
     const sameKid = set.keys.filter((key) => key.kid === kid);
     if (sameKid.length === 0) {
+      const unusable = set.skipped.find((entry) => entry.kid === kid);
+      if (unusable) {
+        throw new JwtKeyError(`The key with kid "${kid}" is in the set but could not be imported: ${unusable.reason}`);
+      }
       throw new JwtKeyNotFoundError(`No key in the set has kid "${kid}".`, kid);
     }
     const matches = sameKid.filter((key) => key.algorithm === alg);
@@ -79,7 +101,9 @@ export function selectKey(set: JwtKeySet, kid: string | undefined, alg: Algorith
   if (forAlg.length !== 1) {
     throw new JwtKeyNotFoundError(
       forAlg.length === 0
-        ? `The token has no kid, and no key in the set is for ${alg}.`
+        ? `The token has no kid, and no key in the set is for ${alg}${
+            set.skipped.length > 0 ? ` (${set.skipped.length} could not be imported; see the set's skipped list)` : ''
+          }.`
         : `The token has no kid, and ${forAlg.length} keys in the set are for ${alg}; the choice would be a guess.`,
       undefined,
     );

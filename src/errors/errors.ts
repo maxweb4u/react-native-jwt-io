@@ -26,7 +26,9 @@ export class JwtError extends Error {
 
   constructor(code: JwtErrorCode, message: string) {
     super(message);
-    this.name = new.target.name;
+    // `name` comes from the prototype (see `named` below), not from
+    // `new.target.name`: a minifier renames classes, and in a release build
+    // every error would be called "u".
     this.code = code;
     // Babel's class transform, which some React Native presets still apply,
     // breaks `instanceof` for subclasses of built-ins without this.
@@ -118,3 +120,28 @@ export class JwtMigrationError extends JwtError {
     super(JwtErrorCode.Migration, message);
   }
 }
+
+/**
+ * Sets each class's `name` as a string literal, which survives minification.
+ * Metro's release build mangles class names, so `new.target.name` would read
+ * "u". Not enumerable, like `Error.prototype.name`.
+ */
+function named(classes: Record<string, { prototype: object }>): void {
+  for (const [name, errorClass] of Object.entries(classes)) {
+    Object.defineProperty(errorClass.prototype, 'name', { value: name, writable: true, configurable: true });
+  }
+}
+
+named({
+  JwtError,
+  JwtMalformedError,
+  JwtAlgorithmError,
+  JwtSignatureError,
+  JwtExpiredError,
+  JwtNotBeforeError,
+  JwtClaimError,
+  JwtKeyError,
+  JwtKeyNotFoundError,
+  JwtHostRequirementError,
+  JwtMigrationError,
+});

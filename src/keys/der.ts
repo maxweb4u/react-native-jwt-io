@@ -1,3 +1,5 @@
+import { bytesToBigInt } from '../utils/bytes';
+
 /**
  * The smallest DER reader that SPKI, PKCS#8, PKCS#1 and SEC1 keys need.
  *
@@ -17,6 +19,10 @@ export const DerTag = {
   Sequence: 0x30,
   ContextSpecific0: 0xa0,
   ContextSpecific1: 0xa1,
+  ContextSpecific2: 0xa2,
+  ContextSpecific3: 0xa3,
+  /** `[1] IMPLICIT BIT STRING`, as the public key in PKCS#8 v2. */
+  ContextSpecific1Primitive: 0x81,
 } as const;
 
 export interface DerNode {
@@ -25,6 +31,9 @@ export interface DerNode {
 }
 
 export class DerError extends Error {}
+
+/** The largest INTEGER in a supported key: a 16384-bit RSA modulus, plus its sign byte. */
+const MAX_INTEGER_BYTES = 16384 / 8 + 1;
 
 /** Reads consecutive TLV nodes from `bytes`. */
 export function readNodes(bytes: Uint8Array): DerNode[] {
@@ -96,11 +105,10 @@ export function readUnsignedInteger(node: DerNode | undefined): bigint {
   if (content.length > 1 && content[0] === 0 && ((content[1] as number) & 0x80) === 0) {
     throw new DerError('non-minimal integer');
   }
-  let value = BigInt(0);
-  for (const byte of content) {
-    value = (value << BigInt(8)) | BigInt(byte);
+  if (content.length > MAX_INTEGER_BYTES) {
+    throw new DerError('an integer is larger than any supported key uses');
   }
-  return value;
+  return bytesToBigInt(content);
 }
 
 export function readOid(node: DerNode | undefined): string {
@@ -113,7 +121,13 @@ export function readOid(node: DerNode | undefined): string {
   }
   const subidentifiers: number[] = [];
   let value = 0;
+  let start = true;
   for (const byte of content) {
+    // X.690 §8.19.2: a subidentifier never starts with 0x80, so each OID has one encoding.
+    if (start && byte === 0x80) {
+      throw new DerError('non-minimal OID');
+    }
+    start = (byte & 0x80) === 0;
     value = value * 128 + (byte & 0x7f);
     if ((byte & 0x80) === 0) {
       subidentifiers.push(value);
