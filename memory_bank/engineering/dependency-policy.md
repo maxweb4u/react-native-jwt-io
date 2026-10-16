@@ -40,7 +40,7 @@ Import sub-paths (`@noble/curves/nist.js`), never a package root: Metro bundles 
 
 ## Peer dependencies
 
-None for the core — not even `react-native`, which the library never imports; the supported range is defined by engine features instead ([ADR-005](../adr/ADR-005-host-requirements.md)). React becomes an optional peer only if the `useJwt` hook ships behind its own entry point.
+None for the core — not even `react-native`, which the library never imports; the supported range is defined by engine features instead ([ADR-007](../adr/ADR-007-host-requirements-text-encoder.md)). React becomes an optional peer only if the `useJwt` hook ships behind its own entry point.
 
 ## Adding a runtime dependency
 

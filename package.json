@@ -1,27 +1,70 @@
 {
   "name": "react-native-jwt-io",
-  "version": "1.0.4",
-  "description": "This package generates JWT tokens using jsrsasign library.",
-  "main": "index.js",
+  "version": "2.0.0-alpha.0",
+  "description": "Sign, verify and decode JSON Web Tokens in React Native. Pure TypeScript on Hermes: no native module, no server.",
+  "main": "lib/commonjs/index.js",
+  "module": "lib/module/index.js",
+  "types": "lib/typescript/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/typescript/index.d.ts",
+      "react-native": "./src/index.ts",
+      "node": "./lib/commonjs/index.js",
+      "import": "./lib/module/index.js",
+      "require": "./lib/commonjs/index.js",
+      "default": "./lib/commonjs/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
-    "index.js",
     "src",
-    "CHANGELOG.md"
+    "lib",
+    "CHANGELOG.md",
+    "!**/__tests__",
+    "!**/*.test.ts"
   ],
+  "sideEffects": [
+    "./src/host/hostCheck.ts",
+    "./lib/*/host/hostCheck.js"
+  ],
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "check:docs": "node scripts/check-memory-bank.mjs"
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types",
+    "build:cjs": "tsc -p tsconfig.build.json --module commonjs --outDir lib/commonjs",
+    "build:esm": "tsc -p tsconfig.build.json --module es2020 --outDir lib/module",
+    "build:types": "tsc -p tsconfig.build.json --declaration --emitDeclarationOnly --outDir lib/typescript",
+    "clean": "rm -rf lib coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "check:docs": "node scripts/check-memory-bank.mjs",
+    "check:build": "node scripts/check-build.cjs",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run check:docs",
+    "prepack": "npm run clean && npm run build && npm run check:build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maxweb4u/react-native-jwt-io.git"
   },
   "keywords": [
-    "JWT",
-    "jwt.io",
-    "generate",
-    "token",
-    "auth"
+    "jwt",
+    "jws",
+    "jwk",
+    "json-web-token",
+    "react-native",
+    "hermes",
+    "expo",
+    "sign",
+    "verify",
+    "decode",
+    "typescript"
   ],
   "author": "Max Gornostayev",
   "license": "MIT",
@@ -30,6 +73,21 @@
   },
   "homepage": "https://github.com/maxweb4u/react-native-jwt-io#readme",
   "dependencies": {
-    "jsrsasign": "^11.1.5"
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "micro-rsa-dsa-dh": "0.4.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.7",
+    "@babel/preset-env": "^8.0.7",
+    "@babel/preset-typescript": "^8.0.7",
+    "@eslint/js": "^10.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.1",
+    "babel-jest": "^30.5.2",
+    "eslint": "^10.12.0",
+    "jest": "^30.5.2",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2"
   }
 }

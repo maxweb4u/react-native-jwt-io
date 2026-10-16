@@ -16,13 +16,27 @@ canonical_for:
 
 | Input | Meaning |
 |-|-|
-| `string` | HMAC secret as UTF-8. Never parsed as hex, never parsed as PEM. Algorithm `HS256` unless the `algorithm` option names `HS384` or `HS512` |
+| `string` | HMAC secret as UTF-8. Never parsed as hex, never parsed as PEM or JWK. Algorithm `HS256` unless the `algorithm` option names `HS384` or `HS512` |
 | `Uint8Array` | Raw HMAC secret bytes, same algorithm rule. Also the migration path for 1.0.x secrets that were read as hex |
-| PEM via `importPEM(pem, algorithm)` | SPKI public key or PKCS#8 private key; PKCS#1 `RSA PRIVATE KEY` accepted for migration from 1.0.x. `algorithm` is required |
-| JWK object via `importJWK(jwk, algorithm?)` | Public or private; `use` is honoured; algorithm per [Binding](#binding) |
-| JWKS object via `createJWKS()` | Key chosen by the token's `kid`, then filtered by `alg` |
+| PEM via `importPEM(pem, algorithm, { kid? })` | `PUBLIC KEY` (SPKI), `PRIVATE KEY` (PKCS#8 v1 or v2), `RSA PUBLIC KEY` / `RSA PRIVATE KEY` (PKCS#1), `EC PRIVATE KEY` (SEC1). `algorithm` is required. A key whose OID is id-RSASSA-PSS binds to PS* only; if it carries RSASSA-PSS parameters (RFC 4055 §3.1), they must name one SHA-2 hash for the digest and MGF1 and a salt no longer than that hash, and the key binds to that PS* alone |
+| JWK object via `importJWK(jwk, algorithm?)` | Public or private; `use`, if present, must be `sig`, and `key_ops`, if present, must include `sign` or `verify`; algorithm per [Binding](#binding) |
+| JWKS object via `createJWKS()` | Key chosen by the token's `kid`, then filtered by `alg`. Keys not for signatures (`use: "enc"`) or of an unsupported type are left out silently; a supported key that cannot be imported is left out and listed in the set's `skipped` with the reason, so one bad key does not stop the others — and a token whose `kid` names it gets `JwtKeyError` with that reason, not "no such key" |
 
-A PEM is never accepted as a bare string. The bare-string path means "HMAC secret", and keeping the two apart is what closes algorithm confusion structurally rather than by a runtime check.
+Checked at import: RSA moduli are odd and 2048 to 16384 bits (the upper limit is `micro-rsa-dsa-dh`'s, enforced at every operation — refusing at import says why, instead of every verification failing as "invalid signature"), public exponents odd, at least 3 and at most 33 bits (as BoringSSL allows; real keys use 65537, and a 256-bit exponent from a hostile JWKS makes every verification 45 times slower). Sizes are checked before any arithmetic: a 48 KB field must fail at once, not after half a second of BigInt conversion. Also `1 < d < n`, and when the primes are present (PKCS#1, PKCS#8, and JWKs that carry `p` and `q`) they must produce `n`, `e` and `d`. A private key whose parts were mixed from two keys is refused instead of signing tokens nobody can verify. EC and Ed25519 private keys are checked against their public parts the same way, and so is the public key a PKCS#8 v2 key or a SEC1 key carries — for RSA, EC and Ed25519 alike.
+
+An RSA JWK may carry `d` without the primes, so nothing at import proves that `d` belongs to `n` and `e`. `sign` therefore verifies every RSA signature before returning it — about 1% of the signing time — and throws `JwtKeyError` if it does not verify.
+
+DER is read with one encoding per value: definite minimal lengths, minimal positive integers, OIDs without `0x80` padding, no trailing data, and optional fields (`[0]`, `[1]` in PKCS#8 and SEC1; `[0]`–`[3]` in RSASSA-PSS parameters) at most once each and in order.
+
+Key material is never accepted as a secret, in any form a public key is commonly stored or pasted in (`src/keys/keyMaterial.ts`):
+
+- PEM armor anywhere in the input (`openssl pkcs12` writes "Bag Attributes" lines before it), in any case, with any spacing, typographic dashes, or only its END line;
+- JWK or JWKS JSON, escaped or not, a JS literal, `n`/`e` or `crv`/`x` without `kty`, and JSON documents that carry a key (a Keycloak realm with its `public_key`);
+- OpenSSH public keys, authorized_keys lines with options, SSH certificates, and the SSH wire blob without its type;
+- DER of a key (SPKI, PKCS#1, PKCS#8, SEC1), an X.509 certificate or PKCS#7, and an uncompressed EC point (`04‖x‖y`, WebCrypto's raw export) on a supported curve;
+- each of these as bytes or text: base64, base64url (Keycloak's `public_key`), hex (also `0x`-prefixed or colon-separated, as `openssl … -text` prints), Latin-1, UTF-8 with a BOM, UTF-16LE; with literal `\n` escapes (`.env` files), JSON quotes, URL encoding, trailing whitespace — and base64 of any of it (Kubernetes secrets), up to three levels.
+
+The secret path means "HMAC secret", and keeping the two apart is what closes algorithm confusion structurally rather than by a runtime check. Measured on 2026-10-16 against 425 forms of six key types (RSA, P-256, P-384, P-521, secp256k1, Ed25519): 52 still pass, all of them either indistinguishable from random bytes — a bare RSA modulus, a bare EC or Ed25519 coordinate (half of all random 32-byte strings are valid Ed25519 points), a compressed EC point — or forms no tool writes (BER lengths, DER decoded lossily as UTF-8), or private-key containers whose public part an attacker does not have. Against 520,000 generated secrets of 26 kinds — random bytes, base64, hex, UUIDs, passphrases, framework secret formats, JSON that is not a JWK — none was refused. Refused on purpose: text that contains a PEM armor line or starts like an OpenSSH key, and an `oct` JWK (use `importJWK`). Every pattern is linear: an earlier `-{3,}BEGIN` took 7 seconds on 64 KB of dashes.
 
 ## Binding
 

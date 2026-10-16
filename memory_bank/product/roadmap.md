@@ -17,7 +17,7 @@ canonical_for:
 
 Independent of the rewrite and shippable first. `jsrsasign` `^8.0.12` resolves to 8.0.24, which `npm audit` rates critical (signature-verification bypasses among them). 11.1.5 runs the 1.0.x code unchanged — measured: encode, decode, verify, RS256, and the attack probes behave identically and `npm audit` reports 0 vulnerabilities. Raising the range protects existing callers who will not move to 2.0.0 soon. Verified before publishing on 2026-10-15: the packed 1.0.4 tarball, installed into a React Native 0.87.1 app and run as a Hermes Release build on an iOS 18.3 simulator, passed 10 of 10 checks — HS256 and RS256 tokens byte-identical to Node's, Node-signed RS256 and ES256 tokens verified, `alg: none` rejected, Unicode round-trip. Android was not run. The release also adds a `files` field — without it the memory bank would be published — a `CHANGELOG.md`, and a README note announcing 2.0.0 and the support window.
 
-The 1.0.x line is supported with security fixes for **three months after 2.0.0 is published**, then every 1.x version is deprecated on npm and the line is closed ([ADR-004](../adr/ADR-004-break-from-v1-api.md)).
+The 1.0.x line is supported with security fixes for **three months after 2.0.0 is published**, then every 1.x version is deprecated on npm and the line is closed ([ADR-006](../adr/ADR-006-named-1x-tombstones.md)).
 
 ## 2.0.0 — TypeScript rewrite
 
@@ -26,17 +26,17 @@ Tracked as [FT-001](../features/FT-001-typescript-rewrite/feature.md); the order
 | Stage | Content | State |
 |-|-|-|
 | 0 | Memory bank | done |
-| 1 | Package scaffold: TypeScript, ESLint, Jest, build | planned |
-| 1a | Crypto speed on Hermes, and the React Native floor, measured on devices ([ADR-001](../adr/ADR-001-crypto-backend.md), [ADR-005](../adr/ADR-005-host-requirements.md)) | planned |
-| 2 | Core: base64url, JSON, token parsing, errors | planned |
-| 3 | Crypto backend over noble and `micro-rsa-dsa-dh` | planned |
-| 4 | Key import: secret, PEM, JWK; local JWKS | planned |
-| 5 | Synchronous `sign` / `verify` / claim validation / helpers | planned |
-| 6 | Interop and hostile-input test suites | planned |
-| 7 | `example/` app on a device, both platforms | planned |
-| 8 | README, migration guide, changelog, npm release | planned |
+| 1 | Package scaffold: TypeScript, ESLint, Jest, build | done |
+| 1a | Crypto speed on Hermes, and the React Native floor, measured on devices ([ADR-001](../adr/ADR-001-crypto-backend.md), [ADR-005](../adr/ADR-005-host-requirements.md)) | done |
+| 2 | Core: base64url, JSON, token parsing, errors | done |
+| 3 | Crypto backend over noble and `micro-rsa-dsa-dh` | done |
+| 4 | Key import: secret, PEM, JWK; local JWKS | done |
+| 5 | Synchronous `sign` / `verify` / claim validation / helpers | done |
+| 6 | Interop and hostile-input test suites | done |
+| 7 | `example/` app on a device, both platforms | done |
+| 8 | README, migration guide, changelog, npm release | in_progress |
 
-Stage 5 waits on the decisions still open in [../backlog.md](../backlog.md#open-decisions).
+Stages 1–6 were built on 2026-10-15 on the `release/v2.0.0` branch: `npm run verify` passes with 210 tests. Stage 1a has its numbers for an iOS simulator and a physical Android phone ([../engineering/performance.md](../engineering/performance.md)); stage 7 and the documentation of stage 8 followed the same day. The React Native floor was measured last: 0.71, corrected to 0.74 by the second review on 2026-10-16 ([ADR-007](../adr/ADR-007-host-requirements-text-encoder.md)). What remains is the release itself — see [../backlog.md](../backlog.md#open-work-for-200).
 
 ## After 2.0.0
 
@@ -46,7 +46,7 @@ Stage 5 waits on the decisions still open in [../backlog.md](../backlog.md#open-
 
 ## 3.0.0
 
-Removes the migration tombstones — the default export whose `encode`, `decode`, and `verify` throw `JwtMigrationError`. No other change is planned for it; it ships when the tombstones have done their job, not on a date.
+Removes the migration tombstones — the named `encode` and `decode`, and the default export whose `encode`, `decode`, and `verify` throw `JwtMigrationError` ([ADR-006](../adr/ADR-006-named-1x-tombstones.md)). No other change is planned for it; it ships when the tombstones have done their job, not on a date.
 
 ## Not planned
 

@@ -4,12 +4,15 @@ doc_function: canonical
 purpose: Record how the supported React Native range is defined — by the engine features the code needs, not by a peer dependency.
 derived_from:
   - ADR-001-crypto-backend.md
-status: active
-decision_status: accepted
+status: archived
+decision_status: superseded
+superseded_by: ADR-007-host-requirements-text-encoder.md
 date: 2026-10-15
 ---
 
 # ADR-005 — Host requirements instead of a React Native peer
+
+> **Superseded by [ADR-007](ADR-007-host-requirements-text-encoder.md)** on 2026-10-16: `TextEncoder` is needed at module load, so the floor is React Native 0.74, and the dependencies use no BigInt literals. The decision itself stands and is restated there.
 
 ## Context
 

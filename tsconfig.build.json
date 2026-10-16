@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "declaration": false,
+    "sourceMap": true,
+    // No Node or Jest globals in the published code: a `Buffer` or `process`
+    // that type-checks here would be undefined on Hermes.
+    "types": []
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "lib", "example", "src/**/__tests__/**", "src/**/*.test.ts"]
+}
