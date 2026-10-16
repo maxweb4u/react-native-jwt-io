@@ -40,15 +40,15 @@ Out of scope:
 | SC-14 | No export of the core returns a promise | type test over the public barrel |
 | SC-15 | The default export's `encode`, `decode`, and `verify`, and the named `encode` and `decode`, each throw `JwtMigrationError` naming the replacement — also through `require()` and a Node ESM default import | unit; `scripts/check-build.cjs` |
 | SC-16 | An HMAC secret shorter than the hash output is rejected by `sign` and `verify`, and accepted with `allowShortSecret: true` | unit |
-| SC-17 | With `BigInt` or `Object.hasOwn` removed from the global scope, the first call throws `JwtHostRequirementError` naming the missing feature | unit, deleting the global as `react-native-matrix`'s `hostSupport.test.ts` does |
-| SC-18 | The README's React Native floor is the lowest version on which the `example/` self-test passes every algorithm | manual: stage 1a measurement |
+| SC-17 | With `BigInt`, `Object.hasOwn` or `TextEncoder` removed from the global scope, or `**` rewritten by Babel, importing the library throws `JwtHostRequirementError` naming the cause | unit, deleting the global as `react-native-matrix`'s `hostSupport.test.ts` does |
+| SC-18 | The README's React Native floor is the lowest version on which the `example/` self-test passes every check | manual: stage 1a measurement |
 | SC-3 | `alg: none`, and any `alg` other than the key's own (including another hash in the same family) each throw `JwtAlgorithmError` before signature work | hostile suite |
 | SC-4 | An RS256→HS256 confusion token signed with the public key text fails | hostile suite |
 | SC-5 | Expired, not-yet-valid, wrong `iss`/`aud`/`sub` tokens throw their named error; clock tolerance is honoured at the boundary | unit |
 | SC-6 | Malformed tokens (segments, padding, non-object payload, unknown `crit`) throw `JwtMalformedError` before any crypto runs | hostile suite |
 | SC-7 | A string secret is UTF-8: `deadbeef` signs the eight ASCII bytes; `hexToBytes('deadbeef')` reproduces the 1.0.x signature | regression test naming the 1.0.x defect |
 | SC-8 | Non-ASCII payloads round-trip | unit |
-| SC-9 | Every algorithm runs on Hermes on both platforms with no native crypto module installed | manual: `example/` self-test screen |
+| SC-9 | Every key family and curve (HS256, RS256, PS256, ES256/384/512, ES256K, EdDSA) runs on Hermes on both platforms with no native crypto module installed | manual: `example/` self-test screen |
 | SC-10 | A local JWKS selects the key by `kid` and rejects a token whose `kid` is absent with a named error. (Before 2026-10-15 this was the remote-JWKS cooldown criterion, which moved to 2.1) | unit |
 | SC-11 | `npm pack` contains no tests, example, or memory bank | release checklist |
 | SC-12 | An RSA key below 2048 bits is rejected on import, for PEM and JWK alike | hostile suite |

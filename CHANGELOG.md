@@ -17,18 +17,21 @@ A rewrite in TypeScript with a new, synchronous API. Breaking: see
   EdDSA, besides HS256 and RS256 — in pure JavaScript on `@noble/hashes`,
   `@noble/curves` and `micro-rsa-dsa-dh`, with no native module.
 - Key import: `importPEM` (SPKI, PKCS#8, PKCS#1, SEC1), `importJWK`, and
-  `createJWKS` with key selection by `kid`.
-- Claim validation: `exp` and `nbf` always; `iss`, `aud`, `sub`, `typ`,
-  `requiredClaims`, `maxTokenAge` on request; `clockTolerance`.
+  `createJWKS` with key selection by `kid`; keys a set cannot import are
+  listed in its `skipped`, and the rest still work.
+- Claim validation: `exp` and `nbf` by default (`ignoreExpiration`,
+  `ignoreNotBefore` skip them); `iss`, `aud`, `sub`, `typ`, `requiredClaims`,
+  `maxTokenAge` on request; `clockTolerance`.
 - Signing options: `expiresIn`, `notBefore`, `issuer`, `audience`, `subject`,
   `jwtId`, `keyId`, extra header parameters; `iat` by default.
 - `hexToBytes`, to keep verifying 1.x tokens whose secret looked like hex.
 - TypeScript types, CommonJS and ESM builds; Metro reads the TypeScript
   sources through the `react-native` export condition.
-- Requires React Native 0.71 or later with Hermes. Importing the library on an
-  unsuitable engine or build throws `JwtHostRequirementError` naming the cause:
-  a missing `BigInt` or `Object.hasOwn`, or a Babel setup that rewrites `**`
-  into `Math.pow` (React Native 0.70's preset).
+- Requires React Native 0.74 or later with Hermes, and Node 20.19+ or 22.12+
+  outside React Native. Importing the library on an unsuitable engine or build
+  throws `JwtHostRequirementError` naming the cause: a missing `BigInt`,
+  `Object.hasOwn`, or `TextEncoder` (missing in Hermes before React Native 0.74), or a Babel
+  setup that rewrites `**` into `Math.pow` (React Native 0.70's preset).
 
 ### Changed
 
@@ -38,33 +41,48 @@ A rewrite in TypeScript with a new, synchronous API. Breaking: see
 - HMAC secrets shorter than the hash output are refused unless
   `allowShortSecret: true`.
 - `iat` is added to signed tokens unless `noTimestamp: true`.
+- Options must be a plain object, and an unknown option name is an error, in
+  every function that takes options.
+- Error names are string literals, so `error.name` survives minification.
+- `verify`'s `algorithm` pins the token's `alg` for a key set too, and takes
+  any algorithm, not only an HMAC.
 
 ### Removed
 
-- The 1.x API. `encode`, `decode` (exported by name and on the default export)
-  and the default export's `verify` now throw `JwtMigrationError` naming the
-  replacement, however the package is loaded — `import`, `require()`, or a
-  Node ESM default import. They are removed in 3.0.
+- The 1.x API. `encode` and `decode` (exported by name and on the default
+  export) throw `JwtMigrationError` naming the replacement, however the package
+  is loaded — `import`, `require()`, or a Node ESM default import. So does the
+  default export's `verify`; through `require()` or a Node ESM default import
+  `jwt.verify` is the 2.x `verify`. The tombstones are removed in 3.0.
 - `jsrsasign`.
 
 ### Security
 
-- `alg: none` is never accepted; a PEM passed as a string is refused, closing
-  RS256-to-HS256 algorithm confusion by construction.
+- `alg: none` is never accepted, and key material passed as a secret is
+  refused — PEM in any case and after any preamble, JWK and JWKS JSON, OpenSSH
+  public keys, and DER as bytes, base64, base64url, hex or Latin-1 text —
+  closing RS256-to-HS256 algorithm confusion by construction.
 - Base64url is decoded strictly (no padding, no foreign characters, zero
   trailing bits); `__proto__` keys are dropped from decoded JSON; unknown
   `crit` extensions are refused; RSA keys below 2048 bits are refused.
 - Registered claims (`iss`, `sub`, `jti`, `aud`, `exp`, `nbf`, `iat`) and the
   header's `typ`, `cty`, `kid` are type-checked on read and write; `sign`
   checks the header and payload as serialized, so `toJSON` cannot rewrite them.
-- An invalid `now` or a non-finite `clockTolerance` is an error, never a
-  silently disabled time check; time claims are compared exactly.
-- RSA keys are checked at import (odd modulus, `d` in range, primes consistent
-  when present); DER is parsed strictly; JWK `key_ops` and the RSASSA-PSS key
-  OID are honoured.
+- An invalid `now`, a `clockTolerance` above a day, or a time
+  claim outside the range of dates is an error, never a silently disabled
+  check; time claims are compared exactly, durations computed exactly.
+- `verify` and `decodeUnverified` results are deeply frozen.
+- RSA keys are checked at import (2048–16384 bits, odd modulus, exponent of at
+  most 33 bits, `d` in range, primes consistent when present; sizes before any
+  arithmetic, so a hostile JWKS cannot make the import slow), and an RSA
+  signature is verified before `sign` returns it; DER is parsed strictly (one
+  encoding per OID, ordered optional fields, a PKCS#8 v2 public key that must
+  be the private key's own); JWK `key_ops`, the RSASSA-PSS key OID and its
+  hash parameters are honoured.
 - Tested against Node's `crypto` for every algorithm in both directions, the
-  Wycheproof vectors (1717 cases), 2000 corrupted DER keys, and one regression
-  per finding of an independent review.
+  Wycheproof vectors (1717 cases), 2000 fuzzed DER inputs, one regression per
+  finding of three independent reviews, and a test for each mutant that once
+  survived the suite.
 
 ## [1.0.4] — 2026-10-15
 

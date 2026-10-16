@@ -16,11 +16,11 @@ canonical_for:
 ## Layers
 
 ```
-src/host/       hostCheck: engine features and a `**`-rewriting Babel setup, checked before the crypto packages load (ADR-005).
+src/host/       hostCheck: engine features (BigInt, Object.hasOwn, TextEncoder) and a `**`-rewriting Babel setup, checked before the crypto packages load (ADR-007).
                 random: the getRandomValues check for PS* signing.
 src/errors/     JwtError and its subclasses, each with a stable `code`.
 src/types/      Public types: Algorithm, JwtHeader, JwtPayload, Jwk, options. No logic.
-src/utils/      base64url, UTF-8, JSON without __proto__, bytes, NumericDate and durations. Pure.
+src/utils/      base64url, UTF-8, JSON without __proto__ (and deep freezing), bytes, NumericDate and durations, option checks, safe value descriptions for messages. Pure.
 src/keys/       JwtKey (opaque, one algorithm), DER reader, importPEM, importJWK, createJWKS,
                 resolveKey (bare secrets, binding, secret length).
 src/crypto/     curves (noble instances, point validation) and backend (sign/verify over bytes).
@@ -51,14 +51,14 @@ isExpired(token, { clockTolerance?, now? }): boolean
 getExpiration(token): Date | null
 importPEM(pem, algorithm, { kid? }): JwtKey
 importJWK(jwk, algorithm?): JwtKey
-createJWKS(jwks, { algorithm? }): JwtKeySet
+createJWKS(jwks, { algorithm? }): JwtKeySet   — { keys, skipped }
 hexToBytes(hex): Uint8Array
 Algorithm, JwtErrorCode, JwtError and its ten subclasses
 
 encode, decode, and the default export { encode, decode, verify } — 1.x tombstones that throw JwtMigrationError; removed in 3.0.0
 ```
 
-Every function is synchronous and throws a named error on failure ([ADR-002](../adr/ADR-002-synchronous-api.md)); none returns a promise, which `src/__tests__/api.test.ts` asserts along with the exact export list. `algorithm` applies only to a bare secret (default `HS256`); an imported key carries its own ([ADR-003](../adr/ADR-003-one-key-one-algorithm.md)). Names, `decode` existing only as a tombstone, the tombstones and `allowShortSecret` are [ADR-006](../adr/ADR-006-named-1x-tombstones.md).
+Every function is synchronous and throws a named error on failure ([ADR-002](../adr/ADR-002-synchronous-api.md)); none returns a promise, which `src/__tests__/api.test.ts` asserts along with the exact export list. For a bare secret `algorithm` picks the HMAC (default `HS256`); for an imported key it must equal the key's own; in `verify` it also pins the token's `alg`, for a key set too ([ADR-003](../adr/ADR-003-one-key-one-algorithm.md)). Options are plain objects with known names only. Names, `decode` existing only as a tombstone, the tombstones and `allowShortSecret` are [ADR-006](../adr/ADR-006-named-1x-tombstones.md).
 
 Everything exported from `src/index.ts` is a published contract. Adding to it is a minor release; changing or removing from it is a major one.
 

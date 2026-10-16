@@ -4,9 +4,11 @@ doc_kind: engineering
 doc_function: canonical
 purpose: 'Read before changing the default export or the package exports map, or when a 1.x user reports "jwt.encode is not a function".'
 derived_from:
-  - ../adr/ADR-004-break-from-v1-api.md
-status: draft
+  - ../adr/ADR-006-named-1x-tombstones.md
+status: archived
 ---
+
+> **Resolved** on 2026-10-15 by [ADR-006](../adr/ADR-006-named-1x-tombstones.md): `encode` and `decode` are exported by name too. Kept as the measurement behind that decision; the present tense below describes `2.0.0-alpha.0` before the fix.
 # The 1.x tombstones are invisible to require() and Node ESM default imports
 
 Measured on 2026-10-15 against the packed `2.0.0-alpha.0` tarball in a clean consumer project.

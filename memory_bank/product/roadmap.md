@@ -36,7 +36,7 @@ Tracked as [FT-001](../features/FT-001-typescript-rewrite/feature.md); the order
 | 7 | `example/` app on a device, both platforms | done |
 | 8 | README, migration guide, changelog, npm release | in_progress |
 
-Stages 1–6 were built on 2026-10-15 on the `release/v2.0.0` branch: `npm run verify` passes with 210 tests. Stage 1a has its numbers for an iOS simulator and a physical Android phone ([../engineering/performance.md](../engineering/performance.md)); stage 7 and the documentation of stage 8 followed the same day. The React Native floor was measured last: 0.71. What remains is the release itself — see [../backlog.md](../backlog.md#open-work-for-200).
+Stages 1–6 were built on 2026-10-15 on the `release/v2.0.0` branch: `npm run verify` passes with 210 tests. Stage 1a has its numbers for an iOS simulator and a physical Android phone ([../engineering/performance.md](../engineering/performance.md)); stage 7 and the documentation of stage 8 followed the same day. The React Native floor was measured last: 0.71, corrected to 0.74 by the second review on 2026-10-16 ([ADR-007](../adr/ADR-007-host-requirements-text-encoder.md)). What remains is the release itself — see [../backlog.md](../backlog.md#open-work-for-200).
 
 ## After 2.0.0
 
@@ -46,7 +46,7 @@ Stages 1–6 were built on 2026-10-15 on the `release/v2.0.0` branch: `npm run v
 
 ## 3.0.0
 
-Removes the migration tombstones — the default export whose `encode`, `decode`, and `verify` throw `JwtMigrationError`. No other change is planned for it; it ships when the tombstones have done their job, not on a date.
+Removes the migration tombstones — the named `encode` and `decode`, and the default export whose `encode`, `decode`, and `verify` throw `JwtMigrationError` ([ADR-006](../adr/ADR-006-named-1x-tombstones.md)). No other change is planned for it; it ships when the tombstones have done their job, not on a date.
 
 ## Not planned
 

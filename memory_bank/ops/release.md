@@ -36,11 +36,14 @@ The end date is written into the README with the 2.0.0 release. Decided in [ADR-
 ## Checklist
 
 1. `npm run verify` passes.
-2. `example/` runs on a physical device or simulator on both platforms, and its self-test screen passes every algorithm.
-3. `npm pack --dry-run` lists only `lib/`, `src/`, `README.md`, `LICENSE`, `CHANGELOG.md`.
+2. `example/` runs in a Release build on a physical device or simulator on both platforms, and its self-test screen reads 14/14.
+3. `npm pack --dry-run` lists only `lib/`, `src/`, `README.md`, `LICENSE`, `CHANGELOG.md`, `package.json`.
 4. `CHANGELOG.md` has an entry; for 2.0.0 the README carries the migration guide and the 1.0.x end-of-support date.
 5. The memory bank matches the change ([../dna/lifecycle.md](../dna/lifecycle.md)).
-6. `npm publish` (`prepack` rebuilds `lib/`), then tag `v<version>` and push.
+6. Publish — `prepack` rebuilds `lib/`:
+   - a release: `npm publish`;
+   - a prerelease (`2.0.0-alpha.0`, `-beta.N`, `-rc.N`): `npm publish --tag next`. Without `--tag`, npm moves `latest` to it, and every `npm install react-native-jwt-io` — 1.x users included — gets the breaking prerelease. Check with `npm dist-tag ls react-native-jwt-io` afterwards: `latest` must still be the last release.
+7. Tag `v<version>` and push.
 
 ## Package contents
 

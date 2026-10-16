@@ -24,15 +24,16 @@ Jest. No device is needed for any automated suite; the device check lives in `ex
 |-|-|-|
 | interop | Every algorithm both ways against Node's `crypto`, keys from PEM and JWK; twenty Node ECDSA signatures per curve (high-S); RS256 and HS256 byte-identical to Node; RFC 7515 A.1 | `src/__tests__/interop.test.ts` |
 | hostile input | Malformed segments, strict base64url, non-object payloads, invalid UTF-8, `alg: none`, algorithm confusion, `crit`, `b64`, oversized input, `__proto__`, DER signatures | `src/__tests__/hostile.test.ts` |
-| keys | PEM formats, JWK binding, JWKS selection, weak RSA, and 2000 corrupted DER keys that must fail only with `JwtKeyError` | `src/__tests__/keys.test.ts` |
+| keys | PEM formats, JWK binding, JWKS selection and skipped keys, weak RSA, and 2000 fuzzed DER inputs (about two thirds corrupted, the rest intact) that must import or fail only with `JwtKeyError` | `src/__tests__/keys.test.ts` |
 | claims | Signing options, every claim rule at its boundary, secrets, expiry helpers | `src/__tests__/claims.test.ts` |
-| encoding | base64url, base64, UTF-8, durations against Node | `src/__tests__/encoding.test.ts` |
-| host and API | Missing engine features at import, PS* without RNG, 1.x tombstones, the exact export list, no promises | `src/__tests__/host.test.ts`, `api.test.ts` |
+| encoding | base64url, base64 and UTF-8 against Node; durations against fixed values | `src/__tests__/encoding.test.ts` |
+| host and API | Missing engine features at import (and that noble still needs `TextEncoder` at load), PS* without RNG, 1.x tombstones, the exact export list, no promises | `src/__tests__/host.test.ts`, `api.test.ts` |
 | Wycheproof | 1717 C2SP vectors — malleable and out-of-range signatures, bad padding, edge-case points — through `importPEM` and the crypto module | `src/__tests__/wycheproof.test.ts`, fixtures in `src/__tests__/fixtures/wycheproof/` |
 | README | Every example in the README, run as written | `src/__tests__/readme.test.ts` |
-| review | One regression per finding of the independent review of 2026-10-15 (backlog) | `src/__tests__/review.test.ts` |
+| review | One regression per finding of the independent reviews (backlog): 2026-10-15, and the two rounds of 2026-10-16 | `src/__tests__/review.test.ts`, `review2.test.ts`, `review3.test.ts` |
+| mutation | One test per mutant that survived the suite ([Mutation testing](#mutation-testing)) | `src/__tests__/mutation.test.ts` |
 
-All suites run in one Jest project, in Node, with `now` injected where time matters. The device check — that every algorithm runs on Hermes — is the self-test screen of `example/` (12 checks), described in [performance.md](performance.md).
+All suites run in one Jest project, in Node, with `now` injected where time matters. The device check — that every key family and curve runs on Hermes — is the self-test screen of `example/`, 14 checks: the engine is Hermes; HS256, RS256, PS256, ES256, ES384, ES512, ES256K and EdDSA against Node's tokens (HS384/512, RS384/512 and PS384/512 share their code paths and are covered in Jest only); HS256/RS256/EdDSA byte-identical to Node; every tampered signature refused with `instanceof` and `name` intact; `decodeUnverified`/`isExpired`; `alg: none` refused; a public key refused as a secret as PEM, as bytes after a preamble and as bare base64. Its timings are in [performance.md](performance.md). It is bundled by Metro, which matters: a tree-shaking bundler hides module-load side effects ([gotchas.md](gotchas.md)).
 
 Node's `crypto` is the oracle because it is an independent implementation of every algorithm here. It is a dev dependency only; nothing in `src/` may import it.
 
@@ -41,7 +42,14 @@ Node's `crypto` is the oracle because it is an independent implementation of eve
 - Every row of [../domain/algorithms.md](../domain/algorithms.md) has an interop test in both directions.
 - Every step of [../domain/validation.md](../domain/validation.md#order) has a test proving the right error class and `code`.
 - Every 1.0.x defect in [../backlog.md](../backlog.md#defects-in-the-10x-line) gets a regression test naming it.
-- `coverageThreshold` is a floor, set just under the measured value: 93.63% statements, 90.19% branches, 100% functions, 93.49% lines on 2026-10-15 with 263 tests (the floor itself is 93 / 90 / 100 / 93). The branch margin is thin: the review fixes added defensive branches for inputs no test can reach through the public API.
+- `coverageThreshold` is a floor, set just under the measured value: 96.49% statements, 95.03% branches, 100% functions, 96.41% lines on 2026-10-16 with 458 tests (the floor itself is 96 / 94 / 100 / 96). The numbers move by about 0.1 between runs, because test keys are generated on each run and some branches depend on their bytes. The reviews' regressions ([../backlog.md](../backlog.md#review-of-2026-10-16)) raised it from 93 / 90 / 100 / 93. Most of what stays uncovered is defensive branches for inputs no test can reach through the public API.
+- **A test must fail for the reason its name gives.** The second review found three that passed for another one — a PKCS#8 test whose hand-built DER broke on its length byte, an "oversized" token that was also not JSON, a duration overflow cut short by the length limit. Assert the message or the field that names the cause, not only the error class, and build DER with the `tlv` helper in `src/__tests__/helpers/node.ts`.
+
+## Mutation testing
+
+Line coverage says a check ran, not that a test would notice it gone. On 2026-10-16, 131 hand-written mutants of security-relevant code — each one removed or weakened check, applied to a copy of `src/` and run against the whole suite — left 45 alive: among them, `equalBytes` without its length check (an HMAC tag with bytes appended verified), base64url without the `length % 4 === 1` check, `audience` given but `aud` absent, the 2048-bit floor at 2047, and the RSA self-check skipped for PS*. Each now has a test in `mutation.test.ts`, named after its mutant. Five were equivalent and need none: the signature-length checks in `verifyBytes` (the crypto packages check lengths themselves; kept as defence in depth), `selectKey(opts.algorithm ?? alg)` after the pin check, and the RSASSA-PSS default salt length.
+
+Repeat it before a release that touches `src/keys/`, `src/crypto/` or `src/jwt/`: mutate the checks that changed, and add a test for every survivor.
 
 ## Before handing work over
 

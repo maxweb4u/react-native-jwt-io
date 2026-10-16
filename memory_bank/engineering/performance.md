@@ -45,9 +45,15 @@ Realme RMX3363, Android 13, arm64-v8a, mid-range (2021); same app and tarball, R
 
 The phone is about 1.7× slower than the simulator across the board, so the simulator ratios against 1.0.4 below carry over.
 
-## The oldest supported setup — measured 2026-10-15
+## After the reviews — measured 2026-10-16
 
-Official Hermes v0.12.0 CLI (August 2022, the React Native 0.70/0.71 era) on the same Mac, with the self-test compiled through React Native 0.71's Babel preset and run as bytecode: all 12 checks pass, and the times match the 0.87 simulator within 10% (ES256 verify 37 ms, RS256 verify 5.7 ms, EdDSA verify 18 ms). An old app gains nothing and loses nothing by its Hermes version.
+The 14-check self-test of `example/`, Release builds, after both review rounds of 2026-10-16: **14/14** on the same Realme RMX3363 and on an iOS 18.3 simulator (iPhone 16 Pro). Times match the tables above within noise, except RS256 signing: 917 ms on the phone (507 → 492 ms on the simulator), because `sign` now verifies every RSA signature before returning it (about 1% of the cost — the rest is run-to-run variation). The release builds are minified, so the "name intact" part of the tampered-signature check proves the error-name fix where it matters.
+
+## An older Hermes — measured 2026-10-15
+
+Official Hermes v0.12.0 CLI (August 2022, the React Native 0.70/0.71 era) on the same Mac, with the self-test compiled through React Native 0.71's Babel preset and run as bytecode: all 12 checks of the time pass, and the times match the 0.87 simulator within 10% (ES256 verify 37 ms, RS256 verify 5.7 ms, EdDSA verify 18 ms). An old app gains nothing and loses nothing by its Hermes version.
+
+The bundle was built with esbuild, which tree-shook noble's module-level `TextEncoder` calls, so this run could not show that Hermes before React Native 0.74 fails at import. The timings stand; the floor it suggested (0.71) does not — see [ADR-007](../adr/ADR-007-host-requirements-text-encoder.md).
 
 ## Against 1.0.4 (`jsrsasign` 11), same simulator
 

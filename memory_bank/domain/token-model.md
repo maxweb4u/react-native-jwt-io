@@ -39,3 +39,5 @@ At most 65,536 characters (`MAX_TOKEN_LENGTH` in `src/jwt/parse.ts`); a longer s
 - `sign` validates the payload and header **as serialized**: a `toJSON` method or getter that rewrites `alg` or a claim is refused.
 - Text is UTF-8 both ways. 1.0.x round-tripped non-ASCII correctly through `jsrsasign`; the rewrite must keep that, and a test pins it.
 - Parsed with `JSON.parse`; `__proto__` keys are dropped so a hostile payload cannot reach a prototype.
+- Returned deeply frozen, header too: nested arrays and objects included, so a checked `aud` cannot be changed after `verify` returns.
+- `exp`, `nbf` and `iat` must lie within ±8.64e12 seconds, the range of a `Date`.
