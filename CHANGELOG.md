@@ -4,10 +4,10 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org).
 
-## [Unreleased]
+## [2.0.0-rc.0] — 2026-10-17
 
-From the last pass over the public API before 2.0.0; breaking against
-`2.0.0-alpha.0`.
+The release candidate. From the last pass over the public API before 2.0.0;
+breaking against `2.0.0-alpha.0`.
 
 ### Added
 
@@ -32,6 +32,9 @@ From the last pass over the public API before 2.0.0; breaking against
 
 - Works in Expo Go and in Expo development builds, with no config plugin:
   checked with Expo SDK 58 on Android and iOS.
+- A README section on when you do not need this library: `jwt-decode` for
+  reading your own tokens, server-side verification, and `jose` with
+  `react-native-quick-crypto` when a native module is acceptable.
 
 ### Fixed
 

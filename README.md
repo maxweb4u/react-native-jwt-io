@@ -28,7 +28,7 @@ const { payload } = verify(token, publicKey); // throws if the signature, exp or
 npm install react-native-jwt-io@next
 ```
 
-2.0 is in alpha and published under the npm tag `next`; a plain
+2.0 is a release candidate, published under the npm tag `next`; a plain
 `npm install react-native-jwt-io` still installs 1.0.4, whose API this README
 does not describe.
 
@@ -246,6 +246,31 @@ Measured on a mid-range Android phone (Realme RMX3363, 2021), Release build:
 ES384/ES512 verification takes 150–320 ms on the same phone. Every call runs on
 the JS thread; keep the slow ones out of render paths. ES256 verification is about
 50× faster than 1.x.
+
+## When you do not need this library
+
+- **You only read your own app's tokens.** Showing the user's name from an ID
+  token, or refreshing an access token before it expires, needs no
+  cryptography. [`jwt-decode`](https://github.com/auth0/jwt-decode) does that
+  and nothing else; this library's `decodeUnverified` and `isExpired` do the
+  same, but bring the crypto code into your bundle with them.
+- **Your server already checks the token.** A token your app received from its
+  own backend over HTTPS, and sends back with each request, is verified where
+  it matters — on the server. Verifying it again on the device protects
+  nothing. Verify on the device when the token reaches the app some other way:
+  a deep link, a QR code, another device, an offline licence, or a provider's
+  token used while offline.
+- **You can add a native module and need speed.** Pure JavaScript is slower
+  than native code: RSA signing takes most of a second here, and ES384/ES512
+  verification hundreds of milliseconds. [`jose`](https://github.com/panva/jose)
+  with [`react-native-quick-crypto`](https://github.com/margelo/react-native-quick-crypto),
+  which gives it a native WebCrypto, is the faster choice — at the price of a
+  native module, a development build instead of Expo Go, and an asynchronous API.
+
+This library is for the rest: verifying or signing on the device with no native
+code, in Expo Go too, synchronously, with defaults that refuse unsafe tokens.
+Never sign with an HMAC secret shipped inside the app — anyone can extract it
+([HMAC secrets](#hmac-secrets)).
 
 ## Migrating from 1.x
 
