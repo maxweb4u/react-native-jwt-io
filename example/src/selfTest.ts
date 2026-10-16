@@ -148,6 +148,26 @@ export function runSelfTest(): Result[] {
       }
       return [failures.length === 0, failures.length === 0 ? `all ${fixtures.cases.length + 1}; instanceof and name intact` : `accepted: ${failures.join(', ')}`];
     }),
+    check('PS* signing', () => {
+      // RSA-PSS needs a random salt: this is the one path that uses
+      // crypto.getRandomValues, from react-native-get-random-values here.
+      if (!hasRandom) {
+        return [false, 'no crypto.getRandomValues — import react-native-get-random-values first'];
+      }
+      const rsa = fixtures.cases.find((c) => c.alg === 'PS256')!;
+      const details: string[] = [];
+      let ok = true;
+      for (const alg of ['PS256', 'PS384', 'PS512'] as const) {
+        const privateKey = importPEM(rsa.privatePem, alg);
+        const publicKey = importPEM(rsa.publicPem, alg);
+        const first = timed(() => sign({ sub: alg }, privateKey, { now: new Date(0) }));
+        const second = sign({ sub: alg }, privateKey, { now: new Date(0) });
+        // Same input, different salt: equal signatures would mean no randomness.
+        ok = ok && first.value !== second && verify(first.value, publicKey).payload.sub === alg;
+        details.push(`${alg} ${ms(first.ms)}`);
+      }
+      return [ok, `sign ${details.join(', ')}; salts differ`];
+    }),
     check('Unverified read', () => {
       const { header } = decodeUnverified(fixtures.hs256NodeToken);
       return [header.alg === 'HS256' && !isExpired(fixtures.hs256NodeToken), 'decodeUnverified, isExpired'];
