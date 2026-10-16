@@ -54,7 +54,21 @@ const cases = [
   nodeToken: nodeSign(alg, pairs[kind].privateKey, { sub: `node-${alg}` }),
 }));
 
-const fixtures = { secret, hs256NodeToken: nodeSign('HS256', secret, { sub: 'node-HS256' }), cases };
+// Deterministic algorithms sign the same bytes on every implementation: the
+// device must reproduce these tokens exactly. sign() writes { alg, typ } and
+// appends iat after the payload, so Node signs the same JSON here.
+const referenceIat = 1700000000;
+const referencePayload = { sub: 'reference', iat: referenceIat };
+const reference = {
+  iat: referenceIat,
+  tokens: {
+    HS256: nodeSign('HS256', secret, referencePayload),
+    RS256: nodeSign('RS256', pairs.rsa.privateKey, referencePayload),
+    EdDSA: nodeSign('EdDSA', pairs.ed.privateKey, referencePayload),
+  },
+};
+
+const fixtures = { secret, hs256NodeToken: nodeSign('HS256', secret, { sub: 'node-HS256' }), cases, reference };
 const out = fileURLToPath(new URL('../src/fixtures.ts', import.meta.url));
 writeFileSync(
   out,

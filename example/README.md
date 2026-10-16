@@ -1,8 +1,11 @@
 # react-native-jwt-io example
 
 A React Native 0.87 app that runs the library **from source** on a device and
-shows a self-test: every algorithm verifies a token signed by Node's `crypto`,
-signs one of its own, and reports the time each took. It is the manual check
+shows a self-test: each key family and curve (HS256, RS256, PS256,
+ES256/384/512, ES256K, EdDSA) verifies a token signed by Node's `crypto`, signs
+one of its own, and reports the time each took; deterministic signatures must
+equal Node's byte for byte, tampered ones must fail, and error names must
+survive the release build's minifier. It is the manual check
 behind SC-9 and SC-13 in `memory_bank/features/FT-001-typescript-rewrite/` and
 the numbers in `memory_bank/engineering/performance.md`.
 
@@ -23,7 +26,9 @@ npx react-native run-ios --mode Release
 npx react-native run-android --mode release
 ```
 
-The screen should read **Self-test 12/12 passed**. PS256 reports that signing
+The screen should read **Self-test 14/14 passed**. The first line must say
+Hermes: the self-test fails on any other engine, since Hermes is the only one
+supported. PS256 reports that signing
 needs `getRandomValues`: that is the designed behaviour without
 `react-native-get-random-values`, not a failure.
 

@@ -3,7 +3,8 @@ import {
   decodeUnverified,
   importPEM,
   isExpired,
-  type JwtError,
+  JwtError,
+  JwtSignatureError,
   sign,
   verify,
 } from 'react-native-jwt-io';
@@ -34,6 +35,23 @@ function timed<T>(f: () => T, runs = 1): { value: T; ms: number } {
 
 const ms = (value: number) => `${value < 10 ? value.toFixed(1) : Math.round(value)} ms`;
 
+/** The token with one signature character changed — still canonical base64url. */
+function tamper(token: string): string {
+  const at = token.length - 10;
+  const replacement = token[at] === 'A' ? 'B' : 'A';
+  return token.slice(0, at) + replacement + token.slice(at + 1);
+}
+
+/** Whatever `run` throws, as the error, or null when it returns. */
+function thrown(run: () => unknown): unknown {
+  try {
+    run();
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
 function check(name: string, run: () => [boolean, string]): Result {
   try {
     const [ok, detail] = run();
@@ -54,8 +72,10 @@ export function runSelfTest(): Result[] {
   const hasRandom = typeof g.crypto?.getRandomValues === 'function';
   const results: Result[] = [
     {
+      // Only Hermes is supported: a pass on JSC or in a remote debugger's V8
+      // would say nothing about the engine apps ship with.
       name: 'Engine',
-      ok: true,
+      ok: Boolean(g.HermesInternal),
       detail: `${g.HermesInternal ? 'Hermes' : 'not Hermes'}, getRandomValues ${hasRandom ? 'present' : 'absent'}`,
     },
   ];
@@ -95,6 +115,39 @@ export function runSelfTest(): Result[] {
   }
 
   results.push(
+    check('Same bytes as Node', () => {
+      // HS256, RS256 (PKCS#1 v1.5) and EdDSA are deterministic: a token signed
+      // here must equal Node's byte for byte.
+      const rsa = fixtures.cases.find((c) => c.alg === 'RS256')!;
+      const ed = fixtures.cases.find((c) => c.alg === 'EdDSA')!;
+      const options = { now: new Date(fixtures.reference.iat * 1000) };
+      const ours = {
+        HS256: sign({ sub: 'reference' }, fixtures.secret, options),
+        RS256: sign({ sub: 'reference' }, importPEM(rsa.privatePem, 'RS256'), options),
+        EdDSA: sign({ sub: 'reference' }, importPEM(ed.privatePem, 'EdDSA'), options),
+      };
+      const differ = (Object.keys(ours) as (keyof typeof ours)[]).filter((alg) => ours[alg] !== fixtures.reference.tokens[alg]);
+      return [differ.length === 0, differ.length === 0 ? 'HS256, RS256, EdDSA identical' : `differ: ${differ.join(', ')}`];
+    }),
+    check('Tampered signatures refused', () => {
+      // A verifier that always said yes would pass every check above but this one.
+      const failures: string[] = [];
+      // `name` too: a release build minifies class names, and the library
+      // must not take error names from them.
+      const named = (error: unknown) =>
+        error instanceof JwtSignatureError && error instanceof JwtError && error.name === 'JwtSignatureError';
+      const hs = thrown(() => verify(tamper(fixtures.hs256NodeToken), fixtures.secret));
+      if (!named(hs)) {
+        failures.push('HS256');
+      }
+      for (const c of fixtures.cases) {
+        const error = thrown(() => verify(tamper(c.nodeToken), importPEM(c.publicPem, c.alg as Algorithm)));
+        if (!named(error)) {
+          failures.push(c.alg);
+        }
+      }
+      return [failures.length === 0, failures.length === 0 ? `all ${fixtures.cases.length + 1}; instanceof and name intact` : `accepted: ${failures.join(', ')}`];
+    }),
     check('Unverified read', () => {
       const { header } = decodeUnverified(fixtures.hs256NodeToken);
       return [header.alg === 'HS256' && !isExpired(fixtures.hs256NodeToken), 'decodeUnverified, isExpired'];
@@ -107,13 +160,15 @@ export function runSelfTest(): Result[] {
         return [(error as JwtError).code === 'ERR_JWT_ALGORITHM', (error as JwtError).code];
       }
     }),
-    check('PEM as a string refused', () => {
-      try {
-        verify(fixtures.hs256NodeToken, fixtures.cases[0]!.publicPem);
-        return [false, 'accepted'];
-      } catch (error) {
-        return [(error as JwtError).code === 'ERR_JWT_KEY_INVALID', (error as JwtError).code];
-      }
+    check('Public key as a secret refused', () => {
+      const publicPem = fixtures.cases[0]!.publicPem;
+      // As a string, and as bytes after a preamble such as openssl pkcs12 writes.
+      const preamble = `Bag Attributes\n    friendlyName: server\n    localKeyID: 01 02 03 04\n${publicPem}`;
+      const bytes = Uint8Array.from(preamble, (char) => char.charCodeAt(0));
+      // And as the bare base64 body, as Keycloak shows a realm's public key.
+      const body = publicPem.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '');
+      const codes = [publicPem, bytes, body].map((key) => (thrown(() => verify(fixtures.hs256NodeToken, key)) as JwtError | null)?.code);
+      return [codes.every((c) => c === 'ERR_JWT_KEY_INVALID'), codes.join(', ')];
     }),
   );
   return results;
