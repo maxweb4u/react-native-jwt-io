@@ -50,6 +50,8 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   thousand levels deep, and a `TypeError` when a `toJSON` threw `null`; both
   are library errors now, and `verify` says "nested too deeply" rather than
   "not valid JSON".
+- With React Native's Babel preset, an own `__proto__` key in a payload to
+  sign became the copy's prototype; it is dropped, as everywhere else.
 
 ### Security
 

@@ -131,6 +131,18 @@ describe('#4 claim mismatch messages are escaped and bounded', () => {
   });
 });
 
+describe('#9 an own __proto__ key in a payload to sign is dropped, whatever the build does with a spread', () => {
+  it('is not in the token, and is not the payload copy’s prototype', () => {
+    const payload = JSON.parse('{"__proto__":{"admin":true,"iat":5,"iss":"evil"},"sub":"x"}') as object;
+    const token = sign(payload, SECRET_32, { now: new Date(1_700_000_000_000) });
+    const json = Buffer.from(token.split('.')[1] as string, 'base64url').toString();
+    expect(json).not.toContain('__proto__');
+    expect(json).not.toContain('admin');
+    expect(JSON.parse(json)).toEqual({ sub: 'x', iat: 1_700_000_000 });
+    expect(() => sign(payload, SECRET_32, { issuer: 'good' })).not.toThrow();
+  });
+});
+
 describe('#14 messages escape bidirectional and invisible characters', () => {
   it.each(['\u202e', '\u2066', '\u200f', '\u061c', '\ufeff', '\u200b', '\u007f', '\u009f'])('U+%s', (char) => {
     const token = hs256('{}', JSON.stringify({ alg: 'HS256', kid: `evil${char}next` }));

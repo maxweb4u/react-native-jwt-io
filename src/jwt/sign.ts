@@ -42,9 +42,17 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   if (!isPlainObject(payload)) {
     throw new JwtClaimError('payload', 'The payload must be a plain object.');
   }
+  // Own keys one by one, not a spread: Babel's loose object spread (the React
+  // Native preset) is Object.assign, which turns an own "__proto__" key into
+  // the copy's prototype — iat and iss would be inherited, not serialized.
+  const claims: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(payload)) {
+    if (name !== '__proto__') {
+      claims[name] = value;
+    }
+  }
   const resolved = resolveKey(key, opts.algorithm);
   assertSecretStrength(resolved, allowShortSecret);
-  const claims: Record<string, unknown> = { ...payload };
 
   const now = Math.floor(currentSeconds(opts.now));
   if (claims.iat === undefined && !noTimestamp) {
