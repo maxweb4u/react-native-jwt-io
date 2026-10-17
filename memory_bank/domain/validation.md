@@ -36,7 +36,7 @@ The token's header never chooses the algorithm; the key does. Every key has exac
 - NumericDate in seconds. A value above `1e11` is almost certainly milliseconds; signing rejects it rather than producing a token that expires in the year 5000. Beyond ±8.64e12 no `Date` can represent it, so reading one is a `JwtClaimError` too — never a `RangeError` from formatting the message, never an Invalid Date from `getExpiration`.
 - `exp`: invalid when `now - tolerance >= exp`.
 - `nbf`: invalid when `now + tolerance < nbf`.
-- `iat`: in the future beyond tolerance is invalid; `maxTokenAge` additionally bounds it: invalid when `now - tolerance >= iat + maxTokenAge` — the same exclusive bound as `exp`.
+- `iat` is checked only with `maxTokenAge`, as in `jose` ([ADR-009](../adr/ADR-009-future-iat.md)): then it is required, in the future beyond tolerance is invalid, and invalid when `now - tolerance >= iat + maxTokenAge` — the same exclusive bound as `exp`. Without `maxTokenAge` a future `iat` is accepted: a device clock a few seconds behind the issuer's would otherwise refuse every fresh token, and `exp` and `nbf` bound the token's validity. `maxTokenAge` must be at least one second.
 - `exp` is checked by default. Skipping it is an explicit option, not an omission.
 - Default tolerance: 0 seconds, configurable up to **one day** (86,400 seconds); anything else is a `JwtOptionError`. Clock skew is seconds to minutes; a larger tolerance is `exp` switched off, which has its own explicit option (`ignoreExpiration`).
 - Durations (`clockTolerance`, `maxTokenAge`, `expiresIn`, `notBefore`) are whole seconds, rounded down, computed in integers: `'2.05m'` is 123 seconds, not the 122 that `2.05 * 60` gives in floating point. The longest is `1e11` seconds.
@@ -53,7 +53,7 @@ The token's header never chooses the algorithm; the key does. Every key has exac
 | `typ` | header `typ` equals the given value after RFC 7515 §4.1.9 normalization: a value without `/` means `application/<value>`; compared case-insensitively. `JWT` matches `application/jwt`; `a/b` does not match `application/a/b` |
 | `requiredClaims` | each named claim is present |
 
-Claim checks run only when the option is given — except `exp`, `nbf`, and "`iat` is not in the future", which run whenever the claim is present. In particular a token's `aud` is ignored without `audience`; RFC 7519 §4.1.3 asks a recipient to reject an `aud` it is not in, and only the caller knows which audience it is, so the README tells callers to pass it.
+Claim checks run only when the option is given — except `exp` and `nbf`, which run whenever the claim is present. In particular a token's `aud` is ignored without `audience`; RFC 7519 §4.1.3 asks a recipient to reject an `aud` it is not in, and only the caller knows which audience it is, so the README tells callers to pass it.
 
 An option of the wrong type (`issuer: 5`, `subject: ['u']`) is a `JwtOptionError` naming the option, not a mismatch.
 

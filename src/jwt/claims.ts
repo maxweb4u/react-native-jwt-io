@@ -63,12 +63,15 @@ export function validateClaims(header: JwtHeader, payload: JwtPayload, rules: Cl
     throw new JwtNotBeforeError(`The token is not valid before ${fromNumericDate(nbf).toISOString()}.`, fromNumericDate(nbf));
   }
   const iat = numericClaim(payload, 'iat');
-  if (iat !== undefined && iat > now + tolerance) {
-    throw new JwtClaimError('iat', 'The token was issued in the future ("iat" is later than now).');
-  }
+  // iat is only checked when the caller asks for an age limit, as in jose:
+  // a device clock a few seconds behind the issuer's would otherwise refuse
+  // every fresh token, and exp and nbf already bound the token's validity.
   if (rules.maxTokenAge !== undefined) {
     if (iat === undefined) {
       throw new JwtClaimError('iat', '"maxTokenAge" was given, but the token has no "iat".');
+    }
+    if (iat > now + tolerance) {
+      throw new JwtClaimError('iat', 'The token was issued in the future ("iat" is later than now).');
     }
     // Like exp: at exactly iat + maxTokenAge the token is too old.
     const until = iat + rules.maxTokenAge.seconds;

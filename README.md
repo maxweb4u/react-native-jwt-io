@@ -186,6 +186,11 @@ Durations are seconds or strings: `'30s'`, `'15m'`, `'2.5h'`, `'7d'`, `'1 week'`
 in whole seconds, rounded down. `clockTolerance` is at most a day: it is for
 clock skew; to accept expired tokens, say so with `ignoreExpiration`.
 
+Phone clocks drift. When you verify on a device, pass a `clockTolerance` of
+some seconds (`'30s'`), or a token's `nbf` can make it fail for its first
+moments. `iat` is compared with the clock only when you pass `maxTokenAge`, as
+in `jose`.
+
 `verify` and `decodeUnverified` return deeply frozen objects.
 
 ### Errors

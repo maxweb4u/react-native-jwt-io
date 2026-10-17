@@ -6,8 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [2.0.0-rc.0] — 2026-10-17
 
-The release candidate. From the last pass over the public API before 2.0.0;
-breaking against `2.0.0-alpha.0`.
+The release candidate. From the last pass over the public API before 2.0.0
+and the review that followed it; breaking against `2.0.0-alpha.0`.
 
 ### Added
 
@@ -23,6 +23,8 @@ breaking against `2.0.0-alpha.0`.
   `JwtOptionError`. Problems in the token or the payload stay `JwtClaimError`.
 - `verify` and `isExpired` check all their options before reading the token,
   so a bad token no longer hides a mistake in them.
+- A future `iat` is refused only when `maxTokenAge` is given, as in `jose`: a
+  device clock a few seconds behind the issuer's refused every fresh token.
 - The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
   `noTimestamp` must be booleans; `'true'` was read as false.
 - `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload & T`:

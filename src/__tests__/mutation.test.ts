@@ -208,8 +208,8 @@ describe('keys', () => {
 });
 
 describe('claims and options', () => {
-  it('K:C12 an iat one second in the future', () => {
-    expect(() => verify(sign({ iat: T + 1 }, SECRET_32), SECRET_32, { now: at(T) })).toThrow(/issued in the future/);
+  it('K:C12 an iat one second in the future, with maxTokenAge', () => {
+    expect(() => verify(sign({ iat: T + 1 }, SECRET_32), SECRET_32, { now: at(T), maxTokenAge: 60 })).toThrow(/issued in the future/);
   });
   it('K:C13 audience required but the token has none', () => {
     expect(() => verify(sign({}, SECRET_32), SECRET_32, { audience: 'app' })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
