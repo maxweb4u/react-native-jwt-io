@@ -33,7 +33,7 @@ The token's header never chooses the algorithm; the key does. Every key has exac
 
 ## Time claims
 
-- NumericDate in seconds. A value above `1e11` is almost certainly milliseconds; signing rejects it rather than producing a token that expires in the year 5000. Beyond ±8.64e12 no `Date` can represent it, so reading one is a `JwtClaimError` too — never a `RangeError` from formatting the message, never an Invalid Date from `getExpiration`.
+- NumericDate in seconds. A value above `1e11` (the year 5138) is almost certainly milliseconds; signing rejects it rather than producing a token that expires in the year 5000, and so does every reader — `verify`, `decodeUnverified`, `isExpired`, `getExpiration` — since the third review of 2026-10-17 (OD-9): read as seconds, a token from an issuer that writes milliseconds, expired an hour ago, would never expire. `jose` accepts such a time; no issuer means it. Beyond ±8.64e12 no `Date` can represent it, which is its own message. Either way a `JwtClaimError` — never a `RangeError` from formatting the message, never an Invalid Date from `getExpiration`.
 - `exp`: invalid when `now - tolerance >= exp`.
 - `nbf`: invalid when `now + tolerance < nbf`.
 - `iat` is checked only with `maxTokenAge`, as in `jose` ([ADR-009](../adr/ADR-009-future-iat.md)): then it is required, in the future beyond tolerance is invalid, and invalid when `now - tolerance >= iat + maxTokenAge` — the same exclusive bound as `exp`. Without `maxTokenAge` a future `iat` is accepted: a device clock a few seconds behind the issuer's would otherwise refuse every fresh token, and `exp` and `nbf` bound the token's validity. `maxTokenAge` must be at least one second.

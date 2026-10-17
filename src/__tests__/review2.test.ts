@@ -76,7 +76,9 @@ describe('#3 a NumericDate outside the Date range is a claim error, not a RangeE
   it('getExpiration and isExpired never produce an Invalid Date', () => {
     expect(() => getExpiration(hs256('{"exp":1e13}'))).toThrow(code('ERR_JWT_CLAIM_INVALID'));
     expect(() => isExpired(hs256('{"exp":-1e13}'))).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(getExpiration(hs256('{"exp":8.64e12}'))?.toISOString()).toBe('+275760-09-13T00:00:00.000Z');
+    // At the edge of the Date range, but milliseconds by the 1e11 rule (review 6, #3).
+    expect(() => getExpiration(hs256('{"exp":8.64e12}'))).toThrow(/looks like milliseconds/);
+    expect(getExpiration(hs256('{"exp":1e11}'))?.toISOString()).toBe('5138-11-16T09:46:40.000Z');
   });
 
   it('sign refuses such a payload too', () => {

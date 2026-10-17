@@ -8,6 +8,8 @@ import crypto from 'node:crypto';
 import {
   createJWKS,
   decodeUnverified,
+  getExpiration,
+  isExpired,
   JwtClaimError,
   JwtError,
   JwtKeyError,
@@ -79,6 +81,27 @@ describe('#2 a toJSON that throws something other than an Error', () => {
     };
     expect(() => sign({ a: bad }, SECRET_32)).toThrow(JwtClaimError);
     expect(() => sign({}, SECRET_32, { header: { x: bad } })).toThrow(JwtOptionError);
+  });
+});
+
+describe('#3 a time in milliseconds is refused in reading as in signing', () => {
+  const ms = Date.now() - 3_600_000;
+
+  it.each(['exp', 'nbf', 'iat'])('%s', (name) => {
+    const token = hs256(`{"${name}":${ms}}`);
+    expect(() => verify(token, SECRET_32)).toThrow(/looks like milliseconds/);
+    expect(() => decodeUnverified(token)).toThrow(expect.objectContaining({ code: 'ERR_JWT_CLAIM_INVALID', claim: name }));
+  });
+
+  it('isExpired and getExpiration, which read exp alone', () => {
+    const token = hs256(`{"exp":${ms}}`);
+    expect(() => isExpired(token)).toThrow(/looks like milliseconds/);
+    expect(() => getExpiration(token)).toThrow(/looks like milliseconds/);
+    expect(isExpired(hs256('{"exp":1e11}'))).toBe(false);
+  });
+
+  it('sign names a millisecond iat before the exp computed from it', () => {
+    expect(() => sign({ iat: ms, exp: ms + 60_000 }, SECRET_32)).toThrow(expect.objectContaining({ claim: 'iat' }));
   });
 });
 

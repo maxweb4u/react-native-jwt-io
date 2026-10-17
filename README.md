@@ -125,7 +125,8 @@ const token = sign({ sub: deviceId }, key, { expiresIn: '5m', audience: 'api' })
 
 `iat` is set automatically (`noTimestamp: true` turns that off; an `iat` you put
 in the payload is kept either way). Times are seconds; a value that looks like
-milliseconds is refused.
+milliseconds (above `1e11`, the year 5138) is refused — in a payload you sign,
+and in a token you read, which would otherwise never expire.
 
 ### HMAC secrets
 

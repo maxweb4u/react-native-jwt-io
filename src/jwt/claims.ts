@@ -2,7 +2,7 @@ import { JwtClaimError, JwtExpiredError, JwtNotBeforeError, JwtOptionError } fro
 import { type JwtHeader, type JwtPayload } from '../types/jwt';
 import { type Duration, type VerifyOptions } from '../types/options';
 import { describeValue } from '../utils/describe';
-import { fromNumericDate, MAX_CLOCK_TOLERANCE_SECONDS, MAX_DATE_SECONDS, parseDuration } from '../utils/time';
+import { fromNumericDate, MAX_CLOCK_TOLERANCE_SECONDS, MAX_DATE_SECONDS, MAX_PLAUSIBLE_NUMERIC_DATE, parseDuration } from '../utils/time';
 
 /** `verify`'s claim options, checked and normalized before the token is read. */
 export interface ClaimRules {
@@ -143,14 +143,19 @@ export function validateRegisteredClaims(payload: Record<string, unknown>): void
   if (aud !== undefined && typeof aud !== 'string' && !(Array.isArray(aud) && aud.every((a) => typeof a === 'string'))) {
     throw new JwtClaimError('aud', '"aud" must be a string or an array of strings.');
   }
-  for (const name of ['exp', 'nbf', 'iat'] as const) {
+  // iat first: when a payload passed to sign has a millisecond iat, the exp
+  // and nbf computed from it are off too, and iat is the cause to name.
+  for (const name of ['iat', 'exp', 'nbf'] as const) {
     numericClaim(payload, name);
   }
 }
 
 /**
  * A time claim must be a finite number when present — a string `exp` is not
- * "no expiry" — and inside the range a Date can represent.
+ * "no expiry" — inside the range a Date can represent, and not past 1e11
+ * (the year 5138): such a value is milliseconds, and read as seconds a token
+ * that expired an hour ago would never expire. Refused in reading as in
+ * signing; no issuer means it.
  */
 export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): number | undefined {
   const value = payload[name];
@@ -162,6 +167,12 @@ export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): 
   }
   if (Math.abs(value) > MAX_DATE_SECONDS) {
     throw new JwtClaimError(name, `"${name}" is ${value}, outside the range of dates (±${MAX_DATE_SECONDS} seconds).`);
+  }
+  if (value > MAX_PLAUSIBLE_NUMERIC_DATE) {
+    throw new JwtClaimError(
+      name,
+      `"${name}" is ${value}, which looks like milliseconds or an overflow. JWT times are seconds: use Math.floor(Date.now() / 1000).`,
+    );
   }
   return value;
 }

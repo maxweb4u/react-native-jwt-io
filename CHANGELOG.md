@@ -29,6 +29,10 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   `noTimestamp` must be booleans; `'true'` was read as false.
 - `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload & T`:
   `exp`, `sub` and the other registered claims stay typed whatever `T` is.
+- A time claim above `1e11` is refused as milliseconds when a token is read
+  too — by `verify`, `decodeUnverified`, `isExpired` and `getExpiration` — as
+  it was in signing: read as seconds, a token that expired an hour ago never
+  expired. Stricter than `jose`.
 
 ### Documented
 
