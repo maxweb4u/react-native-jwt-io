@@ -15,6 +15,7 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   the call — an unknown option, or one of the wrong type or out of range — in
   every function that takes options. An app can now tell a bug in its own
   code from a bad token.
+- `PayloadShape<T>`, to pass a payload type through a generic of your own.
 
 ### Changed
 
@@ -36,8 +37,10 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   device clock a few seconds behind the issuer's refused every fresh token.
 - The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
   `noTimestamp` must be booleans; `'true'` was read as false.
-- `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload & T`:
-  `exp`, `sub` and the other registered claims stay typed whatever `T` is.
+- `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload &
+  Readonly<T>`: `exp`, `sub` and the other registered claims stay typed, and
+  `T` may narrow them (`sub: string`, or `string | undefined`) but not change
+  their type (`exp: Date` does not compile).
 - A time claim above `1e11` is refused as milliseconds when a token is read
   too — by `verify`, `decodeUnverified`, `isExpired` and `getExpiration` — as
   it was in signing: read as seconds, a token that expired an hour ago never

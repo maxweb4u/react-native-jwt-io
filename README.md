@@ -172,8 +172,12 @@ too; for a bare secret it also picks the HMAC), `issuer` (one or a list),
 
 `T` describes your own claims and is added to the registered ones: with
 `verify<{ roles: string[] }>`, both `payload.roles` and `payload.exp` are
-typed. Only the registered claims (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`,
-`jti`) are checked at run time; the rest of `T` is your assertion.
+typed, read-only. `T` may narrow a registered claim (`sub: string`) but not
+change its type: `exp: Date` does not compile. To pass `T` through a generic of
+your own, constrain it with `PayloadShape`:
+`<T extends PayloadShape<T>>`. Only the registered claims (`iss`, `sub`, `aud`,
+`exp`, `nbf`, `iat`, `jti`) are checked at run time; the rest of `T` is your
+assertion.
 
 Options are a plain object. An unknown option name is an error, not ignored: a
 misspelled `expiresin`, or jsonwebtoken's `maxAge`, would otherwise switch

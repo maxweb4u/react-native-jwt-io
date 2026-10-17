@@ -19,7 +19,7 @@ export { type KeyInput } from './keys/resolveKey';
 export { hexToBytes } from './utils/bytes';
 
 export { Algorithm, type HmacAlgorithm } from './types/algorithm';
-export { type DecodedJwt, type Jwk, type JwkSet, type JwtHeader, type JwtPayload } from './types/jwt';
+export { type DecodedJwt, type Jwk, type JwkSet, type JwtHeader, type JwtPayload, type PayloadShape } from './types/jwt';
 export { type ClockOptions, type Duration, type SignOptions, type VerifyOptions } from './types/options';
 
 export {

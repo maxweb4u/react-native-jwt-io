@@ -3,7 +3,7 @@ import { JwtAlgorithmError, JwtMalformedError, JwtSignatureError } from '../erro
 import { isJwtKeySet, type JwtKeySet, selectKey } from '../keys/jwks';
 import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { isAlgorithm } from '../types/algorithm';
-import { type DecodedJwt, type JwtPayload } from '../types/jwt';
+import { type DecodedJwt, type JwtPayload, type PayloadShape } from '../types/jwt';
 import { type VerifyOptions } from '../types/options';
 import { describeValue } from '../utils/describe';
 import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
@@ -33,7 +33,7 @@ const VERIFY_OPTIONS = [
  * a bare secret is HS256 unless `options.algorithm` says otherwise.
  * See memory_bank/domain/validation.md#order.
  */
-export function verify<TPayload = JwtPayload>(
+export function verify<TPayload extends PayloadShape<TPayload> = JwtPayload>(
   token: string,
   key: KeyInput | JwtKeySet,
   options: VerifyOptions = {},
@@ -78,5 +78,5 @@ export function verify<TPayload = JwtPayload>(
   }
 
   validateClaims(header, payload, rules);
-  return Object.freeze({ header, payload: payload as JwtPayload & TPayload });
+  return Object.freeze({ header, payload: payload as DecodedJwt<TPayload>['payload'] });
 }

@@ -6,6 +6,7 @@
 import type crypto from 'node:crypto';
 import {
   createJWKS,
+  decodeUnverified,
   importJWK,
   importPEM,
   JwtAlgorithmError,
@@ -13,6 +14,7 @@ import {
   JwtKeyError,
   sign,
   verify,
+  type PayloadShape,
 } from '../index';
 import { type Jwk } from '../types/jwt';
 import { b64u, nodeKeyPair, pem, SECRET_32 } from './helpers/node';
@@ -110,6 +112,27 @@ describe('#6 an algorithm that names nothing is a mistake in the call, in every 
     expect(() => importPEM(pem(rsa.publicKey), 'HS256')).toThrow(JwtKeyError);
     expect(() => importJWK({ ...jwkOf(rsa.publicKey), alg: 'RS256' }, 'RS384')).toThrow(JwtKeyError);
     expect(() => verify(sign({}, SECRET_32), SECRET_32, { algorithm: 'HS512' })).toThrow(JwtAlgorithmError);
+  });
+});
+
+describe('#7 the payload type cannot contradict the registered claims', () => {
+  const token = sign({ sub: 'u', roles: ['admin'] }, SECRET_32, { now: at(T), expiresIn: 60 });
+
+  it('compile-time checks (npm run typecheck), with the run-time values they describe', () => {
+    const { payload } = verify<{ sub: string; roles: string[] }>(token, SECRET_32, { now: at(T) });
+    const sub: string = payload.sub;
+    const exp: number | undefined = payload.exp;
+    // @ts-expect-error the payload is frozen, and its type says so
+    expect(() => (payload.sub = 'x')).toThrow(TypeError);
+    // @ts-expect-error exp is a number of seconds, never a Date
+    expect(verify<{ exp: Date }>(token, SECRET_32, { now: at(T) }).payload.exp).toBe(T + 60);
+    // @ts-expect-error nor a string
+    expect(typeof decodeUnverified<{ iat: string }>(token).payload.iat).toBe('number');
+    const narrowed: string = verify<{ aud: string }>(sign({ aud: 'a' }, SECRET_32), SECRET_32, { audience: 'a' }).payload.aud;
+    // A generic of the caller's own passes its type through with PayloadShape.
+    const read = <P extends PayloadShape<P>>(t: string) => verify<P>(t, SECRET_32, { now: at(T) }).payload;
+    const roles: string[] = read<{ roles: string[] }>(token).roles;
+    expect([sub, exp, narrowed, roles]).toEqual(['u', T + 60, 'a', ['admin']]);
   });
 });
 
