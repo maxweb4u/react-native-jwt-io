@@ -16,30 +16,65 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   every function that takes options. An app can now tell a bug in its own
   code from a bad token.
 - `PayloadShape<T>`, to pass a payload type through a generic of your own.
+- `importPEM` reads PEM as OpenSSL and Node do: text around the block (the
+  `Bag Attributes` of `openssl pkcs12`) and an `EC PARAMETERS` block (from
+  `openssl ecparam -genkey`) are ignored; two key blocks are still an error.
 
 ### Changed
 
 - Option mistakes that were `JwtClaimError` (from `sign`, `verify`,
   `isExpired`) or `JwtKeyError` (from `importPEM`, `importJWK`, `createJWKS`)
   are `JwtOptionError` — an unknown `algorithm` argument to `importPEM` and
-  `importJWK` too. Problems in the token or the payload stay `JwtClaimError`.
+  `importJWK` too, and an unknown `options.algorithm` in `sign` and `verify`,
+  which was a `JwtAlgorithmError`. Problems in the token or the payload stay
+  `JwtClaimError`.
 - `verify` and `isExpired` check all their options before reading the token,
   and `sign` before the payload and the key, so neither hides a mistake in
-  them. An option no token could satisfy — `issuer: []`, `audience: []`,
-  `maxTokenAge: 0` — and an `expiresIn`, `notBefore` or `now` past any
-  plausible date are `JwtOptionError`.
+  them, `options.header` included. An option no token could satisfy —
+  `issuer: []`, `audience: []`, `maxTokenAge: 0`, an `expiresIn` under a
+  second — and an `expiresIn`, `notBefore` or `now` past any plausible date are
+  `JwtOptionError`.
+- A `kid` in `options.header` beats the key's own; with a different `keyId`
+  it is an error.
+- `isExpired` and `getExpiration` read and check `exp` alone, so a token whose
+  `sub` is a number can still be refreshed in time; `decodeUnverified` and
+  `verify` still check every registered claim's type.
 - A future `iat` is refused only when `maxTokenAge` is given, as in `jose`: a
   device clock a few seconds behind the issuer's refused every fresh token.
 - RSA signing is blinded against timing attacks when `crypto.getRandomValues`
-  is available; without it, RS* signing works unblinded as before.
+  works; without it — or with one that throws or returns no random bytes —
+  RS* signing works unblinded as before, and PS* signing throws
+  `JwtHostRequirementError`.
 - A JWK of a supported type with an `alg` this library does not know — such as
   RFC 9864's `Ed25519` — is listed in the key set's `skipped` with the reason,
-  instead of being left out silently.
+  instead of being left out silently. A JWK with a JWE algorithm (`RSA-OAEP`,
+  `ECDH-ES`, …) is an encryption key and is left out silently, `use` or not. An
+  RSA key without `alg` (as Microsoft Entra publishes them) is reported with
+  the remedy `createJWKS(jwks, { algorithm: 'RS256' })`.
 - The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
   `noTimestamp` must be booleans; `'true'` was read as false.
 - `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload &
   Readonly<T>`: `exp`, `sub` and the other registered claims stay typed, and
-  `T` may narrow them but not change their type (`exp: Date` does not compile).
+  `T` may narrow them (`sub: string`, or `string | undefined`) but not change
+  their type (`exp: Date` does not compile).
+- Types: `Jwk` has no index signature, so WebCrypto's `JsonWebKey` is
+  assignable; the registered members it does not use (`x5c`, `x5t`,
+  `x5t#S256`, `x5u`, `oth`, `ext`) are typed, so a JWK literal carrying them
+  compiles; every option accepts an explicit `undefined` under
+  `exactOptionalPropertyTypes`.
+- A time claim above `1e11` is refused as milliseconds when a token is read
+  too — by `verify`, `decodeUnverified`, `isExpired` and `getExpiration` — as
+  it was in signing: read as seconds, a token that expired an hour ago never
+  expired. Stricter than `jose`.
+- A JWK's `key_ops` limits the key to the operations it lists: a key with
+  `["verify"]` does not sign; `use: "sig"` with an encryption operation, and a
+  public key without `verify`, are refused; `createJWKS` skips a key without
+  `verify`, with the reason.
+- `importPEM` refuses a PEM block that is not complete instead of reading the
+  next one, reads a BEGIN line that ends with spaces, and says what a file of
+  EC PARAMETERS alone is.
+- `decodeUnverified` checks that a header's `crit` is an array of strings;
+  `createJWKS` checks its options before the set.
 
 ### Documented
 
@@ -53,16 +88,37 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
 
 - `createJWKS(set, { algorithm: 'RS999' })` skipped every key the option
   applied to; an unknown algorithm name is now refused.
+- `sign` threw a raw `RangeError` for a payload or header nested a few
+  thousand levels deep, and a `TypeError` when a `toJSON` threw `null`; both
+  are library errors now, and `verify` says "nested too deeply" rather than
+  "not valid JSON".
+- With React Native's Babel preset, an own `__proto__` key in a payload to
+  sign became the copy's prototype; it is dropped, as everywhere else.
+- RSA signing with a `getRandomValues` that returns nothing, or with a
+  throwing `crypto` getter, failed blaming the key; one whose numbers never
+  fall below the modulus, or that fills one array only, hung blinding. The
+  random source is now probed the way blinding draws from it.
 - `requiredClaims: null` switched the check off; it is now an error.
 - `sign({ aud: null }, key, { audience })` blamed the option, not the payload.
+- `sideEffects` now lists the entry points, so webpack and Rollup keep the
+  host check; they dropped it with the barrel module.
+- The README's refresh example used `clockTolerance`, which makes a token live
+  longer; it now asks with a later `now`. The Jest advice has a line for
+  `jest-expo`, whose own patterns it replaced.
 
 ### Security
 
 - A public key passed as an HMAC secret is refused in more forms tools write:
-  .NET `RSAKeyValue` XML, a JWK as YAML or TOML, `openssl -text` output, and
-  DER as a list of decimal bytes.
-- An unverified token's `alg` and `kid` are escaped in error messages, so they
-  cannot forge lines in an app's logs.
+  .NET and XMLDSig XML (with prefixes and attributes), a SAML
+  `X509Certificate`, a JWK as YAML, TOML or a TOML inline table, `openssl
+  -text` output whole or in part, DER as numbers in the shapes JSON, Java,
+  Go, C, `xxd -i`, PowerShell, Python, Rust and Node's `Buffer` write, a
+  `hexdump -C` or `xxd` dump, a JWK as INI, and UTF-16BE text. A 64 KB secret
+  of spaces took seven seconds to check; every check is linear again.
+- An unverified token's `alg` and `kid`, and the `iss`, `aud`, `sub` and
+  `typ` named in claim errors, are escaped and shortened in error messages —
+  U+2028, U+2029, C1 controls and bidirectional format characters included —
+  so they cannot forge or reverse lines in an app's logs.
 
 ## [2.0.0-alpha.0] — 2026-10-16
 

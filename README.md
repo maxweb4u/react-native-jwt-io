@@ -53,14 +53,20 @@ Requirements:
 - **Expo:** works in **Expo Go** and in development builds — there is no native
   code, so no config plugin and no prebuild. Install with
   `npx expo install react-native-jwt-io@next`, and for PS* signing
-  `npx expo install react-native-get-random-values`, imported first as above;
-  Expo Go includes it. Run with Expo SDK 58 (React Native 0.88) in Expo Go on an
-  Android phone and an iOS simulator, development and minified bundles.
+  `npx expo install react-native-get-random-values`, imported first as above —
+  in Expo Go it draws its random bytes from Expo's own `expo-crypto` module,
+  which Expo Go ships; Expo itself provides no `crypto.getRandomValues`. Run with
+  Expo SDK 58 (React Native 0.88) in Expo Go on an Android phone and an iOS
+  simulator, development and minified bundles.
 - Node 20.19+ or 22.12+ works too (CommonJS and ESM): the CommonJS build loads
   the ES-module-only crypto packages with `require()`.
 - **Jest in your app:** the crypto packages are ES modules only, so let Jest
-  transform them —
-  `transformIgnorePatterns: ['node_modules/(?!(react-native|@react-native|@noble|micro-rsa-dsa-dh|react-native-jwt-io)/)']`.
+  transform them. Add `@noble|micro-rsa-dsa-dh|react-native-jwt-io` to your
+  preset's own `transformIgnorePatterns` rather than replacing it — with
+  `@react-native/jest-preset`:
+  `['node_modules/(?!(react-native|@react-native|@noble|micro-rsa-dsa-dh|react-native-jwt-io)/)']`;
+  with `jest-expo`:
+  `['/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|@noble|micro-rsa-dsa-dh|react-native-jwt-io))']`.
 
 ## Usage
 
@@ -73,14 +79,19 @@ but it can read them, for example to refresh before expiry:
 import { decodeUnverified, isExpired, getExpiration } from 'react-native-jwt-io';
 
 const { payload } = decodeUnverified<{ sub: string; roles: string[] }>(accessToken);
-if (isExpired(accessToken, { clockTolerance: '30s' })) {
+// Refresh 30 seconds early: ask whether it will have expired by then.
+if (isExpired(accessToken, { now: new Date(Date.now() + 30_000) })) {
   await refresh();
 }
 const expiresAt = getExpiration(accessToken); // Date | null
 ```
 
 None of these check the signature. Use them for display and scheduling, never to
-decide who the user is.
+decide who the user is. `isExpired` and `getExpiration` read `exp` alone;
+`decodeUnverified` also checks the registered claims' types, so a token whose
+`sub` is a number (as `jsonwebtoken.sign({ sub: user.id })` writes it) is
+refused there, and by `verify`. `clockTolerance` works as in `verify`: it lets a
+token live *longer*, which is not what a refresh wants.
 
 ### Verify with a public key
 
@@ -127,7 +138,8 @@ const token = sign({ sub: deviceId }, key, { expiresIn: '5m', audience: 'api' })
 
 `iat` is set automatically (`noTimestamp: true` turns that off; an `iat` you put
 in the payload is kept either way). Times are seconds; a value that looks like
-milliseconds is refused.
+milliseconds (above `1e11`, the year 5138) is refused — in a payload you sign,
+and in a token you read, which would otherwise never expire.
 
 ### HMAC secrets
 
@@ -154,8 +166,8 @@ const strong = sign({ sub: 'u1' }, SECRET_64_BYTES, { algorithm: 'HS512' });
 | `decodeUnverified<T>(token)` | `{ header, payload }`, signature **not** checked |
 | `isExpired(token, { clockTolerance?, now? }?)` | `boolean`; no `exp` means never |
 | `getExpiration(token)` | `Date \| null` |
-| `importPEM(pem, algorithm, { kid? }?)` | `JwtKey` — SPKI, PKCS#8, PKCS#1 (`RSA … KEY`), SEC1 (`EC PRIVATE KEY`) |
-| `importJWK(jwk, algorithm?)` | `JwtKey` — `RSA`, `EC`, `OKP` (Ed25519), `oct` |
+| `importPEM(pem, algorithm, { kid? }?)` | `JwtKey` — SPKI, PKCS#8, PKCS#1 (`RSA … KEY`), SEC1 (`EC PRIVATE KEY`); text around the block and an `EC PARAMETERS` block are ignored |
+| `importJWK(jwk, algorithm?)` | `JwtKey` — `RSA`, `EC`, `OKP` (Ed25519), `oct`; `key_ops`, if present, limits the key to the operations it lists |
 | `createJWKS({ keys }, { algorithm? }?)` | `JwtKeySet` |
 | `hexToBytes(hex)` | `Uint8Array` |
 
@@ -322,6 +334,10 @@ What else changes:
   key (Keycloak's `public_key`) — also inside `.env` escapes, JSON quotes or
   another layer of base64 (Kubernetes secrets). A bare RSA modulus or EC
   coordinate cannot be told from a secret; do not configure one as one.
+- **Certificates are not keys.** 1.x verified with an X.509 certificate
+  (`-----BEGIN CERTIFICATE-----`), as Firebase's x509 endpoint publishes them;
+  `importPEM` refuses one. Extract its public key
+  (`openssl x509 -pubkey -noout`), or use the provider's JWKS with `createJWKS`.
 - **`iat` is added** to signed tokens unless `noTimestamp: true`.
 
 ## License
