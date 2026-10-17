@@ -36,6 +36,9 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   `JwtOptionError`.
 - A `kid` in `options.header` beats the key's own; with a different `keyId`
   it is an error.
+- `isExpired` and `getExpiration` read and check `exp` alone, so a token whose
+  `sub` is a number can still be refreshed in time; `decodeUnverified` and
+  `verify` still check every registered claim's type.
 - A future `iat` is refused only when `maxTokenAge` is given, as in `jose`: a
   device clock a few seconds behind the issuer's refused every fresh token.
 - RSA signing is blinded against timing attacks when `crypto.getRandomValues`

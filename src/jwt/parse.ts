@@ -16,10 +16,11 @@ export interface ParsedToken {
 }
 
 /**
- * Splits and decodes a compact JWS without verifying it.
+ * Splits and decodes a compact JWS without verifying it. The registered
+ * claims are type-checked unless `registeredClaims` is false.
  * See memory_bank/domain/token-model.md.
  */
-export function parseToken(token: unknown): ParsedToken {
+export function parseToken(token: unknown, { registeredClaims = true } = {}): ParsedToken {
   if (typeof token !== 'string') {
     throw new JwtMalformedError('The token must be a string.');
   }
@@ -49,7 +50,11 @@ export function parseToken(token: unknown): ParsedToken {
     throw new JwtMalformedError('The header "crit" must be an array of strings.');
   }
   const payload = decodeJsonSegment(payloadPart, 'payload');
-  validateRegisteredClaims(payload);
+  // Off only for the expiry helpers, which read exp alone: a token whose sub
+  // is a number (jsonwebtoken with sub: user.id) can still be refreshed in time.
+  if (registeredClaims) {
+    validateRegisteredClaims(payload);
+  }
   const signature = base64UrlDecode(signaturePart);
   if (signature === null) {
     throw new JwtMalformedError('The signature segment is not valid base64url.');

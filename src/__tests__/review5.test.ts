@@ -8,8 +8,11 @@ import crypto from 'node:crypto';
 import {
   createJWKS,
   decodeUnverified,
+  getExpiration,
   importJWK,
   importPEM,
+  isExpired,
+  JwtClaimError,
   JwtHostRequirementError,
   JwtKeyError,
   sign,
@@ -217,6 +220,24 @@ describe('#5 escaping in messages covers the other line breaks', () => {
       }
       expect(message).toContain('k\\u2028x');
     }
+  });
+});
+
+describe('#6 the expiry helpers read exp alone', () => {
+  // jsonwebtoken.sign({ sub: user.id }) and Laravel's jwt-auth issue numeric subs.
+  const payload = b64u(JSON.stringify({ sub: 12345, jti: 7, aud: 5, iss: null, exp: T + 60 }));
+  const token = `${b64u('{"alg":"HS256"}')}.${payload}.AAAA`;
+
+  it('isExpired and getExpiration work on a token with non-standard claims', () => {
+    expect(isExpired(token, { now: at(T) })).toBe(false);
+    expect(getExpiration(token)).toEqual(at(T + 60));
+  });
+
+  it('but still refuse a bad exp, and decodeUnverified and verify stay strict', () => {
+    const badExp = `${b64u('{"alg":"HS256"}')}.${b64u('{"exp":"soon"}')}.AAAA`;
+    expect(() => isExpired(badExp)).toThrow(JwtClaimError);
+    expect(() => getExpiration(badExp)).toThrow(JwtClaimError);
+    expect(() => decodeUnverified(token)).toThrow(expect.objectContaining({ claim: 'iss' }));
   });
 });
 

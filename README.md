@@ -73,14 +73,19 @@ but it can read them, for example to refresh before expiry:
 import { decodeUnverified, isExpired, getExpiration } from 'react-native-jwt-io';
 
 const { payload } = decodeUnverified<{ sub: string; roles: string[] }>(accessToken);
-if (isExpired(accessToken, { clockTolerance: '30s' })) {
+// Refresh 30 seconds early: ask whether it will have expired by then.
+if (isExpired(accessToken, { now: new Date(Date.now() + 30_000) })) {
   await refresh();
 }
 const expiresAt = getExpiration(accessToken); // Date | null
 ```
 
 None of these check the signature. Use them for display and scheduling, never to
-decide who the user is.
+decide who the user is. `isExpired` and `getExpiration` read `exp` alone;
+`decodeUnverified` also checks the registered claims' types, so a token whose
+`sub` is a number (as `jsonwebtoken.sign({ sub: user.id })` writes it) is
+refused there, and by `verify`. `clockTolerance` works as in `verify`: it lets a
+token live *longer*, which is not what a refresh wants.
 
 ### Verify with a public key
 

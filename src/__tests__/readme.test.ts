@@ -23,8 +23,13 @@ it('Read a token from your server', () => {
   const accessToken = sign({ sub: 'u1', roles: ['admin'] }, SECRET_32, { expiresIn: '1h' });
   const { payload } = decodeUnverified<{ sub: string; roles: string[] }>(accessToken);
   expect(payload.roles).toEqual(['admin']);
-  expect(isExpired(accessToken, { clockTolerance: '30s' })).toBe(false);
+  // Refresh 30 seconds early: ask whether it will have expired by then.
+  expect(isExpired(accessToken, { now: new Date(Date.now() + 30_000) })).toBe(false);
   expect(getExpiration(accessToken)).toBeInstanceOf(Date);
+  // A token with 20 seconds left is due for a refresh; clockTolerance would say the opposite.
+  const nearlyDone = sign({}, SECRET_32, { expiresIn: 20 });
+  expect(isExpired(nearlyDone, { now: new Date(Date.now() + 30_000) })).toBe(true);
+  expect(isExpired(nearlyDone, { clockTolerance: '30s' })).toBe(false);
 });
 
 it('Verify with a public key', () => {
