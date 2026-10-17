@@ -46,6 +46,14 @@ The end date is written into the README with the 2.0.0 release. Decided in [ADR-
    - a prerelease (`2.0.0-alpha.0`, `-beta.N`, `-rc.N`): `npm publish --tag next`. Without `--tag`, npm moves `latest` to it, and every `npm install react-native-jwt-io` — 1.x users included — gets the breaking prerelease. Check with `npm dist-tag ls react-native-jwt-io` afterwards: `latest` must still be the last release.
 8. Tag `v<version>` on that `master` commit and push the tag.
 
+## Publishing account
+
+The package has two npm owners, both on maxweb4u@gmail.com: `maxweb4u` and `maximgor`; either can publish. Check them with `npm owner ls react-native-jwt-io` — `npm view react-native-jwt-io maintainers` names the account that published the last version it knows (`maximgor` for 1.0.3), not the owners, and once made `maxweb4u` look like the wrong account. 1.0.4 and `2.0.0-alpha.0` were published as `maxweb4u`.
+
+- `npm whoami` failing with E401 means the session expired: `npm login`, then publish.
+- Publishing asks for 2FA through a browser link (`npmjs.com/auth/cli/…`).
+- The registry lags: `npm view` and `npm dist-tag ls` showed a new version about a minute after `+ react-native-jwt-io@<version>` was printed (1.0.4, `2.0.0-alpha.0`). Wait before concluding that a tag did not move.
+
 ## Package contents
 
 Through the `files` field: `lib/` and `src/` (Metro reads TypeScript through the `react-native` export condition). Tests, `example/`, `memory_bank/`, and scripts are excluded. Up to 1.0.3 there was no `files` field, so everything in the directory was published; 1.0.4 added one (`index.js`, `src`, `CHANGELOG.md`).

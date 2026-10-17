@@ -22,7 +22,7 @@ For timing numbers use a Release build — Debug runs the JavaScript through the
 dev server and is several times slower:
 
 ```sh
-cd ios && pod install && cd ..
+cd ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install && cd ..   # CocoaPods fails without a UTF-8 locale
 npx react-native run-ios --mode Release
 npx react-native run-android --mode release
 ```
