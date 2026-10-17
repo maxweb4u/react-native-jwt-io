@@ -24,8 +24,10 @@ import {
 import { type Jwk, type JwkSet } from '../types/jwt';
 import { b64u, nodeKeyPair, pem, SECRET_32 } from './helpers/node';
 
+const code = (c: string) => expect.objectContaining({ code: c });
 const rsa = nodeKeyPair('rsa');
 const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
+const der = (key: crypto.KeyObject) => key.export({ type: 'spki', format: 'der' });
 
 /** An HS256 token over `payload` (JSON text) and `header`, signed with SECRET_32. */
 function hs256(payload: string, header = '{"alg":"HS256","typ":"JWT"}'): string {
@@ -149,6 +151,22 @@ describe('#4 claim mismatch messages are escaped and bounded', () => {
   });
 });
 
+describe('#5 a public key in UTF-16 is refused in either byte order', () => {
+  const text = pem(rsa.publicKey);
+  const be = (withBom: boolean) => {
+    const bytes = Buffer.from(Buffer.from(text, 'utf16le').swap16());
+    return new Uint8Array(withBom ? Buffer.concat([Buffer.from([0xfe, 0xff]), bytes]) : bytes);
+  };
+
+  it.each([
+    ['UTF-16LE', new Uint8Array(Buffer.from(text, 'utf16le'))],
+    ['UTF-16BE with a BOM', be(true)],
+    ['UTF-16BE without one', be(false)],
+  ])('%s', (_, bytes) => {
+    expect(() => sign({}, bytes)).toThrow(code('ERR_JWT_KEY_INVALID'));
+  });
+});
+
 describe('#7 createJWKS checks its options before the set', () => {
   it('an unknown algorithm with a malformed set', () => {
     expect(() => createJWKS(null as unknown as JwkSet, { algorithm: 'RS999' as 'RS256' })).toThrow(JwtOptionError);
@@ -192,6 +210,20 @@ describe('#9 an own __proto__ key in a payload to sign is dropped, whatever the 
     expect(json).not.toContain('admin');
     expect(JSON.parse(json)).toEqual({ sub: 'x', iat: 1_700_000_000 });
     expect(() => sign(payload, SECRET_32, { issuer: 'good' })).not.toThrow();
+  });
+});
+
+describe('#11 the key-material check stays linear', () => {
+  it.each([
+    ['spaces', `1${' '.repeat(65_536)}1`],
+    ['tabs', `[1${'\t'.repeat(65_536)}1`],
+    ['commas', `1${', '.repeat(32_768)}1`],
+    ['openers', `${'['.repeat(65_536)}1`],
+    ['dump lines', '00000000  30 82\n'.repeat(4096)],
+  ])('%s', (_, secret) => {
+    const start = Date.now();
+    expect(() => sign({}, secret)).not.toThrow(RangeError);
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 });
 
@@ -376,6 +408,74 @@ describe('#15 importPEM agrees with OpenSSL on the edges', () => {
 
   it('gives the literal \\n hint with a real newline at the end', () => {
     expect(() => importPEM(`${publicPem.trim().replace(/\n/g, '\\n')}\n`, 'RS256')).toThrow(/the two characters \\n/);
+  });
+});
+
+describe('#16 more dumps of a key are refused as secrets', () => {
+  const bytes = [...der(rsa.publicKey)];
+  const hex = (b: number) => `0x${b.toString(16).padStart(2, '0')}`;
+  const signed = (b: number) => (b > 127 ? b - 256 : b);
+  const lines = (items: string[], perLine: number) =>
+    Array.from({ length: Math.ceil(items.length / perLine) }, (_, i) => `  ${items.slice(i * perLine, (i + 1) * perLine).join(', ')}`).join(',\n');
+  const python = `b'${bytes
+    .map((b) =>
+      b === 0x5c ? '\\\\' : b === 0x27 ? "\\'" : b === 9 ? '\\t' : b === 10 ? '\\n' : b === 13 ? '\\r' : b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : `\\x${b.toString(16).padStart(2, '0')}`,
+    )
+    .join('')}'`;
+  const hexdump = (() => {
+    const out: string[] = [];
+    for (let offset = 0; offset < bytes.length; offset += 16) {
+      const row = bytes.slice(offset, offset + 16);
+      const pairs = row.map((b) => b.toString(16).padStart(2, '0'));
+      const left = pairs.slice(0, 8).join(' ');
+      const right = pairs.slice(8).join(' ');
+      const text = row.map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.')).join('');
+      out.push(`${offset.toString(16).padStart(8, '0')}  ${left.padEnd(23)}  ${right.padEnd(23)}  |${text}|`);
+    }
+    out.push(bytes.length.toString(16).padStart(8, '0'));
+    return out.join('\n');
+  })();
+  const xxd = (() => {
+    const out: string[] = [];
+    for (let offset = 0; offset < bytes.length; offset += 16) {
+      const row = bytes.slice(offset, offset + 16);
+      const groups: string[] = [];
+      for (let i = 0; i < row.length; i += 2) {
+        groups.push(row.slice(i, i + 2).map((b) => b.toString(16).padStart(2, '0')).join(''));
+      }
+      const text = row.map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.')).join('');
+      out.push(`${offset.toString(16).padStart(8, '0')}: ${groups.join(' ').padEnd(39)}  ${text}`);
+    }
+    return out.join('\n');
+  })();
+  const jwk = jwkOf(rsa.publicKey);
+
+  it.each([
+    ['xxd -i', `unsigned char rsa2048_der[] = {\n${lines(bytes.map(hex), 12)}\n};\nunsigned int rsa2048_der_len = ${bytes.length};\n`],
+    ['Go %#v', `[]byte{${bytes.map(hex).join(', ')}}`],
+    ['Java new byte[]', `new byte[]{${bytes.map(signed).join(', ')}}`],
+    ['Python repr', python],
+    ['Python bytes([…])', `bytes([${bytes.join(', ')}])`],
+    ['PowerShell [byte[]]', `[byte[]](${bytes.map(hex).join(',')})`],
+    ['PowerShell @()', `@(${bytes.join(',')})`],
+    ['Rust', `[${bytes.map((b) => `${b}u8`).join(', ')}]`],
+    ['hexdump -C', hexdump],
+    ['xxd', xxd],
+    ['an INI file in capitals', `KTY=RSA\nN=${jwk.n}\nE=${jwk.e}\n`],
+  ])('%s', (_, secret) => {
+    expect(() => sign({}, secret)).toThrow(code('ERR_JWT_KEY_INVALID'));
+  });
+
+  it('while ordinary secrets with numbers or brackets still work', () => {
+    for (const secret of [
+      'config[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17] padding',
+      `${'1'.repeat(20)} and some words after it`,
+      'e: x\nx: short\nn: abc\nkty: none of these',
+      `0123456789abcdef0123456789abcdef`,
+      `[${Array.from({ length: 32 }, (_, i) => i * 7).join(', ')}]`,
+    ]) {
+      expect(verify(sign({ a: 1 }, secret), secret).payload.a).toBe(1);
+    }
   });
 });
 

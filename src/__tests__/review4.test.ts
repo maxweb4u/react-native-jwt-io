@@ -3,7 +3,7 @@
  * (memory_bank/backlog.md, "Review of 2026-10-17"). Each test names its
  * finding.
  */
-import type crypto from 'node:crypto';
+import crypto from 'node:crypto';
 import {
   createJWKS,
   decodeUnverified,
@@ -19,10 +19,16 @@ import {
 import { type Jwk } from '../types/jwt';
 import { b64u, nodeKeyPair, pem, SECRET_32 } from './helpers/node';
 
+const code = (c: string) => expect.objectContaining({ code: c });
 const option = (name: string) => expect.objectContaining({ code: 'ERR_JWT_OPTION_INVALID', option: name });
 const T = 1_700_000_000;
 const at = (seconds: number) => new Date(seconds * 1000);
 const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
+/** An HS256 token whose HMAC key is `key` exactly as given — the forgery a public key used as a secret allows. */
+function forge(key: string | Uint8Array): string {
+  const input = `${b64u('{"alg":"HS256","typ":"JWT"}')}.${b64u('{"sub":"admin"}')}`;
+  return `${input}.${b64u(crypto.createHmac('sha256', key).update(input).digest())}`;
+}
 
 const rsa = nodeKeyPair('rsa');
 const ec = nodeKeyPair('P-256');
@@ -133,6 +139,56 @@ describe('#7 the payload type cannot contradict the registered claims', () => {
     const read = <P extends PayloadShape<P>>(t: string) => verify<P>(t, SECRET_32, { now: at(T) }).payload;
     const roles: string[] = read<{ roles: string[] }>(token).roles;
     expect([sub, exp, narrowed, roles]).toEqual(['u', T + 60, 'a', ['admin']]);
+  });
+});
+
+describe('#8 key dumps that tools write are refused as secrets', () => {
+  const jwk = jwkOf(rsa.publicKey);
+  const b64 = (value: string) => Buffer.from(value, 'base64url').toString('base64');
+  const spki = rsa.publicKey.export({ type: 'spki', format: 'der' });
+  const modulusHex = Buffer.from(jwk.n as string, 'base64url').toString('hex');
+  const ecJwk = jwkOf(ec.publicKey);
+
+  it.each<[string, string]>([
+    ['.NET RSA.ToXmlString(false)', `<RSAKeyValue><Modulus>${b64(jwk.n as string)}</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>`],
+    ['a JWK as YAML', `kty: RSA\nn: ${jwk.n}\ne: AQAB\n`],
+    ['a JWK as YAML without kty', `n: ${jwk.n}\ne: AQAB\n`],
+    ['a JWK as TOML', `kty = "RSA"\nn = "${jwk.n}"\ne = "AQAB"\n`],
+    ['an EC JWK as YAML without kty', `crv: P-256\nx: ${ecJwk.x}\ny: ${ecJwk.y}\n`],
+    [
+      'openssl rsa -pubin -text -noout',
+      `Public-Key: (2048 bit)\nModulus:\n    ${(modulusHex.match(/../g) as string[]).join(':')}\nExponent: 65537 (0x10001)\n`,
+    ],
+    ['openssl pkey -text for Ed25519', `ED25519 Public-Key:\npub:\n    ${'ab:'.repeat(31)}ab\n`],
+    ['DER as a JSON array of bytes', JSON.stringify(Array.from(spki))],
+    ['DER as a comma list', Array.from(spki).join(', ')],
+  ])('%s', (_name, key) => {
+    expect(() => verify(forge(key), key)).toThrow(code('ERR_JWT_KEY_INVALID'));
+    expect(() => sign({}, key)).toThrow(code('ERR_JWT_KEY_INVALID'));
+  });
+
+  it('ordinary secrets that look a little like them still work', () => {
+    for (const secret of [
+      'name: my-app\nsecret: 0123456789abcdef0123456789abcdef',
+      '<config><secret>0123456789abcdef0123456789abcdef</secret></config>',
+      '1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24',
+      JSON.stringify(Array.from(crypto.randomBytes(48))),
+      'The public key: is not here, and this sentence is long enough to be a secret.',
+    ]) {
+      expect(verify(sign({ a: 1 }, secret), secret).payload.a).toBe(1);
+    }
+  });
+
+  it('stays linear on long runs of what the new patterns look for', () => {
+    const start = Date.now();
+    for (const filler of ['\n'.repeat(65_536), ' \t'.repeat(32_768), '1,'.repeat(32_768), 'n: '.repeat(20_000)]) {
+      try {
+        sign({}, filler);
+      } catch {
+        // refused or not: only the time matters here
+      }
+    }
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 });
 

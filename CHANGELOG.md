@@ -88,6 +88,13 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
 
 ### Security
 
+- A public key passed as an HMAC secret is refused in more forms tools write:
+  .NET and XMLDSig XML (with prefixes and attributes), a SAML
+  `X509Certificate`, a JWK as YAML, TOML or a TOML inline table, `openssl
+  -text` output whole or in part, DER as numbers in the shapes JSON, Java,
+  Go, C, `xxd -i`, PowerShell, Python, Rust and Node's `Buffer` write, a
+  `hexdump -C` or `xxd` dump, a JWK as INI, and UTF-16BE text. A 64 KB secret
+  of spaces took seven seconds to check; every check is linear again.
 - An unverified token's `alg` and `kid`, and the `iss`, `aud`, `sub` and
   `typ` named in claim errors, are escaped and shortened in error messages —
   U+2028, U+2029, C1 controls and bidirectional format characters included —

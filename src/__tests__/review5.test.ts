@@ -4,7 +4,7 @@
  * over the first round's fixes, one from a consumer's side. Each test names
  * its finding.
  */
-import type crypto from 'node:crypto';
+import crypto from 'node:crypto';
 import {
   createJWKS,
   decodeUnverified,
@@ -18,10 +18,20 @@ import {
 import { type Jwk } from '../types/jwt';
 import { b64u, nodeKeyPair, pem, SECRET_32 } from './helpers/node';
 
+const code = (c: string) => expect.objectContaining({ code: c });
 const option = (name: string) => expect.objectContaining({ code: 'ERR_JWT_OPTION_INVALID', option: name });
 const T = 1_700_000_000;
 const at = (seconds: number) => new Date(seconds * 1000);
 const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
+function forge(key: string | Uint8Array): string {
+  const input = `${b64u('{"alg":"HS256","typ":"JWT"}')}.${b64u('{"sub":"admin"}')}`;
+  return `${input}.${b64u(crypto.createHmac('sha256', key).update(input).digest())}`;
+}
+const refused = (key: string | Uint8Array) => {
+  expect(() => verify(forge(key), key)).toThrow(code('ERR_JWT_KEY_INVALID'));
+  expect(() => sign({}, key)).toThrow(code('ERR_JWT_KEY_INVALID'));
+};
+const accepted = (secret: string) => expect(verify(sign({ a: 1 }, secret), secret).payload.a).toBe(1);
 
 const rsa = nodeKeyPair('rsa');
 const ec = nodeKeyPair('P-256');
@@ -84,6 +94,91 @@ describe('#3 expiresIn under a second is refused, as maxTokenAge 0 is', () => {
   it('notBefore 0 is fine: nbf = iat', () => {
     const { payload } = decodeUnverified(sign({}, SECRET_32, { now: at(T), notBefore: 0 }));
     expect([payload.iat, payload.nbf]).toEqual([T, T]);
+  });
+});
+
+describe('#4 more public-key dumps are refused as secrets', () => {
+  const jwk = jwkOf(rsa.publicKey);
+  const ecJwk = jwkOf(ec.publicKey);
+  const b64 = (value: string) => Buffer.from(value, 'base64url').toString('base64');
+  const spki = Array.from(rsa.publicKey.export({ type: 'spki', format: 'der' }));
+  const modulusHex = (Buffer.from(jwk.n as string, 'base64url').toString('hex').match(/../g) as string[]).join(':');
+
+  it.each<[string, string]>([
+    ['XMLDSig with a ds: prefix', `<ds:KeyValue><ds:RSAKeyValue><ds:Modulus>${b64(jwk.n as string)}</ds:Modulus><ds:Exponent>AQAB</ds:Exponent></ds:RSAKeyValue></ds:KeyValue>`],
+    ['.NET ECDSA XML with xmlns', `<ECDSAKeyValue xmlns="http://www.w3.org/2001/04/xmldsig-more#"><PublicKey><X Value="1"/></PublicKey></ECDSAKeyValue>`],
+    ['a lower-case RSAKeyValue', `<rsakeyvalue><modulus>${b64(jwk.n as string)}</modulus></rsakeyvalue>`],
+    ['a DSA key in XML', '<DSAKeyValue><P>AQ==</P></DSAKeyValue>'],
+    ['a SAML certificate', `<ds:X509Certificate>${rsa.publicKey.export({ type: 'spki', format: 'der' }).toString('base64')}</ds:X509Certificate>`],
+    ['a TOML inline table', `jwk = { kty = "RSA", n = "${jwk.n}", e = "AQAB" }`],
+    ['PyYAML of a JWKS', `keys:\n- e: AQAB\n  kty: RSA\n  n: ${jwk.n}\n`],
+    ['a YAML list item without kty', `- n: ${jwk.n}\n  e: AQAB\n`],
+    ['a TOML kty line after another', `[jwk]\nkty = "EC"\ncrv = "P-256"\n`],
+    ['Java Arrays.toString of signed bytes', `[${spki.map((b) => (b > 127 ? b - 256 : b)).join(', ')}]`],
+    ['Go fmt.Print of a []byte', `[${spki.join(' ')}]`],
+    ['one byte per line', spki.join('\n')],
+    ['C braces with hex', `{${spki.map((b) => `0x${b.toString(16).padStart(2, '0')}`).join(', ')}}`],
+    ['a trailing comma', `[\n${spki.map((b) => `    ${b},`).join('\n')}\n]`],
+    ['JSON of a Node Buffer', JSON.stringify(Buffer.from(spki))],
+    ['JSON of a Uint8Array', JSON.stringify(Uint8Array.from(spki))],
+    ['openssl -text without the Public-Key line', `Modulus:\n    ${modulusHex}\nExponent: 65537 (0x10001)\n`],
+    ['openssl ec -text, the public part', `pub:\n    04:${'ab:'.repeat(63)}ab\nASN1 OID: prime256v1\nNIST CURVE: P-256\n`],
+    ['openssl rsa -modulus', `Modulus=${Buffer.from(jwk.n as string, 'base64url').toString('hex').toUpperCase()}`],
+    ['an EC JWK as YAML', `crv: P-256\nx: ${ecJwk.x}\ny: ${ecJwk.y}\n`],
+  ])('%s', (_name, key) => {
+    refused(key);
+  });
+
+  it('says it is a dump', () => {
+    expect(() => sign({}, `<RSAKeyValue><Modulus>AQAB</Modulus></RSAKeyValue>`)).toThrow(/text dump/);
+  });
+
+  it('config lines that merely share the names are secrets', () => {
+    const long = crypto.randomBytes(48).toString('base64url');
+    const modulusLength = crypto.randomBytes(128).toString('base64url').slice(0, 170);
+    for (const secret of [
+      `n = "${modulusLength}"\ne = "AQAB"\n`,
+      `n: ${long}\ne: iqzcom=enp\n`,
+      `crv: r1ic3@om\nx: ${crypto.randomBytes(32).toString('hex')}\n`,
+      `n = "${long}"\ne = "stone"\n`,
+      `n: ${long}\n`,
+      'e: AQAB\nanother: line of the secret',
+      'crv: P-256 is my favourite curve name',
+      `x: ${long}\n`,
+      'Public-Key: is a phrase in this secret, not a dump of one',
+      'pub:\nthe bar around the corner, which is long enough for a secret',
+      'Modulus: big, as the poem says, and long enough',
+      'kty: what does it mean anyway, my secret',
+      '1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20',
+    ]) {
+      accepted(secret);
+    }
+  });
+
+  it('a secret that is a list of numbers but not a key still works', () => {
+    accepted(JSON.stringify(Array.from(crypto.randomBytes(64))));
+    accepted(Array.from(crypto.randomBytes(64)).join(' '));
+  });
+
+  it('stays linear on near misses of the new patterns', () => {
+    const inputs = [
+      '<'.repeat(65_536),
+      `<ds:${'a'.repeat(65_000)}`,
+      '1 '.repeat(32_000) + 'x',
+      '-1,'.repeat(21_000) + 'z',
+      '0x1, '.repeat(13_000) + 'q',
+      'pub:\n'.repeat(13_000),
+      '- '.repeat(32_000),
+    ];
+    const start = Date.now();
+    for (const input of inputs) {
+      try {
+        sign({}, input);
+      } catch {
+        // refused or not: only the time matters
+      }
+    }
+    expect(Date.now() - start).toBeLessThan(1500);
   });
 });
 
