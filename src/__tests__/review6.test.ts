@@ -357,6 +357,28 @@ describe('#14 messages escape bidirectional and invisible characters', () => {
   });
 });
 
+describe('#15 importPEM agrees with OpenSSL on the edges', () => {
+  const publicPem = pem(rsa.publicKey);
+
+  it('reads a BEGIN line that ends with spaces', () => {
+    expect(importPEM(publicPem.replace('-----BEGIN PUBLIC KEY-----', '-----BEGIN PUBLIC KEY-----  '), 'RS256').type).toBe('public');
+  });
+
+  it('refuses a broken block rather than reading the next one', () => {
+    const broken = '-----BEGIN PRIVATE KEY-----\nAAA-----X\n-----END PRIVATE KEY-----\n';
+    expect(() => importPEM(broken + publicPem, 'RS256')).toThrow(/is not complete/);
+    expect(() => importPEM(`-----BEGIN PRIVATE KEY-----\n${publicPem}`, 'RS256')).toThrow(/is not complete/);
+  });
+
+  it('says what an EC PARAMETERS file is', () => {
+    expect(() => importPEM('-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n', 'ES256')).toThrow(/only EC PARAMETERS/);
+  });
+
+  it('gives the literal \\n hint with a real newline at the end', () => {
+    expect(() => importPEM(`${publicPem.trim().replace(/\n/g, '\\n')}\n`, 'RS256')).toThrow(/the two characters \\n/);
+  });
+});
+
 describe('every failure here is a JwtError', () => {
   it('sanity', () => {
     expect(new JwtKeyError('x')).toBeInstanceOf(JwtError);

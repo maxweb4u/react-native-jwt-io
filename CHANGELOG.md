@@ -16,6 +16,9 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   every function that takes options. An app can now tell a bug in its own
   code from a bad token.
 - `PayloadShape<T>`, to pass a payload type through a generic of your own.
+- `importPEM` reads PEM as OpenSSL and Node do: text around the block (the
+  `Bag Attributes` of `openssl pkcs12`) and an `EC PARAMETERS` block (from
+  `openssl ecparam -genkey`) are ignored; two key blocks are still an error.
 
 ### Changed
 
@@ -54,6 +57,9 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   too — by `verify`, `decodeUnverified`, `isExpired` and `getExpiration` — as
   it was in signing: read as seconds, a token that expired an hour ago never
   expired. Stricter than `jose`.
+- `importPEM` refuses a PEM block that is not complete instead of reading the
+  next one, reads a BEGIN line that ends with spaces, and says what a file of
+  EC PARAMETERS alone is.
 
 ### Documented
 

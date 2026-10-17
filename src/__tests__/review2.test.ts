@@ -348,9 +348,9 @@ describe('#14 a JWK crv must be a string', () => {
 });
 
 describe('#15 two PEM blocks are named as such', () => {
-  it('says "not a single PEM block", not "not valid base64"', () => {
+  it('says how many blocks, not "not valid base64"', () => {
     const block = pem(rsa.publicKey).trim();
-    expect(() => importPEM(`${block}\n${block}`, 'RS256')).toThrow(/not a single PEM block/);
+    expect(() => importPEM(`${block}\n${block}`, 'RS256')).toThrow(/holds 2 blocks \(PUBLIC KEY, PUBLIC KEY\)/);
   });
 });
 

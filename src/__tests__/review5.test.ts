@@ -11,6 +11,7 @@ import {
   importJWK,
   importPEM,
   JwtHostRequirementError,
+  JwtKeyError,
   sign,
   verify,
 } from '../index';
@@ -121,6 +122,37 @@ describe('#5 escaping in messages covers the other line breaks', () => {
       }
       expect(message).toContain('k\\u2028x');
     }
+  });
+});
+
+describe('#7 importPEM reads what OpenSSL and Node read', () => {
+  const ecPem = ec.privateKey.export({ type: 'sec1', format: 'pem' }) as string;
+  const ecParameters = '-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----\n';
+
+  it.each([
+    ['openssl ecparam -genkey (EC PARAMETERS, then the key)', `${ecParameters}${ecPem}`],
+    ['openssl pkcs12 -nodes (Bag Attributes first)', `Bag Attributes\n    localKeyID: 01 02\nKey Attributes: <No Attributes>\n${ecPem}`],
+    ['text after END', `${ecPem}\nthis key belongs to the staging server\n`],
+    ['CRLF line breaks', ecPem.replace(/\n/g, '\r\n')],
+  ])('%s', (_name, text) => {
+    expect(importPEM(text, 'ES256').type).toBe('private');
+  });
+
+  it('says what is wrong otherwise', () => {
+    expect(() => importPEM(`${ecPem}${ecPem}`, 'ES256')).toThrow(/holds 2 blocks/);
+    expect(() => importPEM(ecPem.replace(/\n/g, '\\n'), 'ES256')).toThrow(/the two characters \\n where its line breaks should be/);
+    expect(() => importPEM('not a key at all', 'ES256')).toThrow(/is not a PEM block/);
+    expect(() => importPEM(ecParameters, 'ES256')).toThrow(/only EC PARAMETERS — a curve, not a key/);
+    expect(() => importPEM(ecPem.replace('END EC PRIVATE KEY', 'END PRIVATE KEY'), 'ES256')).toThrow(/begins with "EC PRIVATE KEY" but ends with "PRIVATE KEY"/);
+    expect(() => importPEM(`${'x'.repeat(70_000)}${ecPem}`, 'ES256')).toThrow(/longer than 65536/);
+    const encrypted = '-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00\n\nAAAA\n-----END RSA PRIVATE KEY-----\n';
+    expect(() => importPEM(encrypted, 'RS256')).toThrow(/Encrypted private keys/);
+  });
+
+  it('a missing END costs one scan', () => {
+    const start = Date.now();
+    expect(() => importPEM('-----BEGIN PUBLIC KEY-----\n'.repeat(2400), 'RS256')).toThrow(JwtKeyError);
+    expect(Date.now() - start).toBeLessThan(500);
   });
 });
 
