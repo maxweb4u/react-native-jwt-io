@@ -3,10 +3,24 @@ type JsonObject = Record<string, unknown>;
 /**
  * `JSON.parse` that drops `__proto__` keys at every depth, so a hostile
  * payload copied with `Object.assign` or a spread cannot reach a prototype.
- * See memory_bank/domain/token-model.md#payload.
+ * Not through a reviver: the reviver recurses, and overflows the stack at a
+ * nesting `JSON.parse` itself accepts. See memory_bank/domain/token-model.md#payload.
  */
 export function parseJson(text: string): unknown {
-  return JSON.parse(text, (key, value: unknown) => (key === '__proto__' ? undefined : value));
+  const value: unknown = JSON.parse(text);
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const item = pending.pop();
+    if (item !== null && typeof item === 'object') {
+      if (Object.prototype.hasOwnProperty.call(item, '__proto__')) {
+        delete (item as JsonObject)['__proto__'];
+      }
+      for (const child of Object.values(item)) {
+        pending.push(child);
+      }
+    }
+  }
+  return value;
 }
 
 /**

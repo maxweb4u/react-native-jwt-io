@@ -16,11 +16,13 @@ import { isKeyDer } from './pem';
  * - JWK and JWKS JSON, and JSON documents carrying a key (a Keycloak realm);
  * - DER of a key, certificate or PKCS#7, an SSH wire blob, a raw EC point;
  * - each as bytes, or as base64, base64url, hex (`0x`, colons) or Latin-1
- *   text; with a UTF-8 or UTF-16 encoding, literal `\n` escapes, JSON quotes,
+ *   text; with a UTF-8 or UTF-16 (either byte order) encoding, literal `\n` escapes, JSON quotes,
  *   URL encoding, or base64 of any of these (as Kubernetes secrets hold them);
- * - text dumps tools write: .NET `RSAKeyValue` XML, a JWK as YAML or TOML,
- *   `openssl … -text` output, DER as a list of decimal bytes (added after the
- *   review of 2026-10-17).
+ * - text dumps tools write: .NET `RSAKeyValue` XML and XMLDSig, a JWK as YAML,
+ *   TOML or INI, `openssl … -text` output, DER as a list of numbers in the
+ *   shapes JSON, Java, Go, C, `xxd -i`, Rust, PowerShell and Node write, as a
+ *   Python bytes literal, or as a `hexdump -C` or `xxd` dump (added after the
+ *   reviews of 2026-10-17).
  *
  * Measured against 425 forms of six key types and 520,000 generated secrets on
  * 2026-10-16: what is left undetected cannot be told from random bytes (a bare
@@ -37,23 +39,32 @@ const MAX_DEPTH = 3;
 const PEM_ARMOR = /[-‐-―−]{3}[ \t]*(?:BEGIN|END)[ \t]+[A-Z0-9]/i;
 const SSH_PUBLIC_KEY =
   /(?:^|\s)(?:ssh-(?:rsa|dss|ed25519|ed448)|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9-]+@openssh\.com)(?:-cert-v01@openssh\.com)?\s+AAAA/;
-const JWK_MEMBER = /[{,]\s*['"]?kty['"]?\s*:/;
-// The same members as YAML or TOML lines. `[ \t]*`, not `\s*`: across lines it would be quadratic.
-const JWK_LINE = /^[ \t]*['"]?kty['"]?[ \t]*[:=]/m;
-const JWK_MODULUS_LINE = /^[ \t]*['"]?n['"]?[ \t]*[:=][ \t]*['"]?[A-Za-z0-9+/_-]{64}/m;
-const JWK_EXPONENT_LINE = /^[ \t]*['"]?e['"]?[ \t]*[:=]/m;
-const JWK_CURVE_LINE = /^[ \t]*['"]?crv['"]?[ \t]*[:=]/m;
-const JWK_X_LINE = /^[ \t]*['"]?x['"]?[ \t]*[:=]/m;
-// .NET RSA.ToXmlString and its EC/DSA relatives.
-const XML_KEY = /<[ \t]*(?:RSAKeyValue|DSAKeyValue|ECDSAKeyValue|Modulus)[ \t]*>/i;
-// `openssl rsa|ec|pkey -text`: "Public-Key: (2048 bit)", "ED25519 Public-Key:", then the numbers.
-const OPENSSL_TEXT = /(?:Public|Private)-Key:[ \t]*(?:\(\d+ bit|$)/m;
-// DER as decimal bytes, as JSON.stringify(Array.from(bytes)) or a comma list writes it.
-const DECIMAL_BYTES = /^\[?[ \t\r\n]*\d{1,3}(?:[ \t\r\n]*,[ \t\r\n]*\d{1,3}){15,}[ \t\r\n]*\]?$/;
+const JWK_MEMBER = /[{,]\s*['"]?kty['"]?\s*[:=]/;
+// The same members as YAML (block or list item) or TOML lines. `[ \t]*`, not
+// `\s*`: across lines it would be quadratic. Values are checked as far as they
+// can be, so an ordinary config line ("e: x", "crv: abc") is not a key.
+const LINE = String.raw`^[ \t]*(?:-[ \t]+)?['"]?`;
+// Case-insensitive: an INI or .env file writes KTY=RSA.
+const JWK_LINE = new RegExp(`${LINE}kty['"]?[ \\t]*[:=][ \\t]*['"]?(?:RSA|EC|OKP|oct)\\b`, 'mi');
+// At least a 1024-bit modulus (171 base64url characters): too small for this
+// library to import, not too small to forge HS256 tokens with.
+const JWK_MODULUS_LINE = new RegExp(`${LINE}n['"]?[ \\t]*[:=][ \\t]*['"]?[A-Za-z0-9+/_-]{171}`, 'mi');
+const JWK_EXPONENT_LINE = new RegExp(`${LINE}e['"]?[ \\t]*[:=][ \\t]*['"]?[A-Za-z0-9+/_-]{1,8}['"]?[ \\t]*,?[ \\t]*$`, 'mi');
+const JWK_CURVE_LINE = new RegExp(`${LINE}crv['"]?[ \\t]*[:=][ \\t]*['"]?(?:P-256|P-384|P-521|secp256k1|Ed25519|Ed448|X25519|X448)\\b`, 'm');
+const JWK_X_LINE = new RegExp(`${LINE}x['"]?[ \\t]*[:=][ \\t]*['"]?[A-Za-z0-9+/_-]{43}`, 'm');
+// .NET RSA.ToXmlString and its EC/DSA relatives, XMLDSig <ds:KeyValue>, a
+// SAML <ds:X509Certificate>: with or without a namespace prefix and attributes.
+// The attribute run is bounded: [^<>]* would be quadratic on "<<<<…".
+const XML_KEY = /<[ \t]*(?:[\w.-]{1,32}:)?(?:RSAKeyValue|DSAKeyValue|ECDSAKeyValue|ECKeyValue|Modulus|X509Certificate)\b[^<>]{0,512}>/i;
+// `openssl rsa|ec|pkey -text`, whole or in part: "Public-Key: (2048 bit)",
+// "ED25519 Public-Key:", a "Modulus:" or "pub:" line followed by hex, an
+// "ASN1 OID:" line, or `openssl rsa -modulus`.
+const OPENSSL_TEXT =
+  /(?:Public|Private)-Key:[ \t]*(?:\(\d+ bit|$)|^[ \t]*(?:modulus|pub|priv):[ \t]*\r?\n[ \t]+[0-9a-f]{2}:|^ASN1 OID:[ \t]*\w|^Modulus=[0-9A-F]{64}/im;
 const BASE64ISH = /^[A-Za-z0-9+/_-]+={0,2}$/;
 const HEX = /^(?:[0-9a-fA-F]{2})+$/;
 
-const PEM = "A PEM key was passed as a secret. Import it with importPEM(pem, 'RS256')";
+const PEM = "A PEM key was passed as a secret. Import it with importPEM and the key's algorithm, such as importPEM(pem, 'RS256') or importPEM(pem, 'ES256')";
 const SSH = 'An OpenSSH public key was passed as a secret. Convert it (ssh-keygen -e -m PKCS8 -f key.pub) and import it with importPEM';
 const JWK = 'A JWK was passed as a secret. Parse it and import it with importJWK(jwk)';
 const DER = 'A binary or encoded public key was passed as a secret. Import it with importPEM or importJWK';
@@ -157,11 +168,9 @@ function decodings(text: string): Uint8Array[] {
   if (HEX.test(hex)) {
     out.push(hexToBytes(hex));
   }
-  const trimmed = text.trim();
-  if (DECIMAL_BYTES.test(trimmed)) {
-    const values = trimmed.replace(/[[\]\s]/g, '').split(',').map(Number);
-    if (values.every((value) => value <= 255)) {
-      out.push(Uint8Array.from(values));
+  for (const bytes of [numericBytes(text), pythonBytes(text), hexDumpBytes(text)]) {
+    if (bytes) {
+      out.push(bytes);
     }
   }
   const compact = text.replace(/\s+/g, '');
@@ -172,6 +181,167 @@ function decodings(text: string): Uint8Array[] {
     }
   }
   return out;
+}
+
+const NUMBER_TOKEN = /^(-?)(?:(\d{1,3})|0[xX]([0-9a-fA-F]{1,2}))(?:_?[ui]8)?$/;
+const OPENERS = '[{(';
+const CLOSERS = ']})';
+// A declaration before the numbers — `unsigned char key_der[] = {`, `[]byte{`,
+// `new byte[]{`, `[byte[]](`, `bytes([`, `@(` — and after them `};`, with
+// xxd's `unsigned int key_der_len = 294;`.
+const MAX_PREFIX = 64;
+const MAX_SUFFIX = 96;
+const MAX_GAP = 64;
+
+/**
+ * Bytes written as numbers: a JSON array, a comma list, Java's
+ * Arrays.toString of signed bytes, Go's [48 130 …] and []byte{0x30, …}, C's
+ * and `xxd -i`'s {0x30, 0x82, …}, Rust's 48u8, PowerShell's @(…), one per
+ * line, a trailing comma. Tokenized by hand, not by a regex, which on a
+ * near-miss would backtrack — quadratically on a run of spaces, exponentially
+ * on ambiguous separators.
+ */
+function numericBytes(text: string): Uint8Array | null {
+  const span = numberSpan(text);
+  if (span === null) {
+    return null;
+  }
+  const tokens = text.slice(span[0], span[1]).split(/[\s,]+/).filter((token) => token.length > 0);
+  if (tokens.length < 16) {
+    return null;
+  }
+  const bytes = new Uint8Array(tokens.length);
+  for (let i = 0; i < tokens.length; i++) {
+    const match = NUMBER_TOKEN.exec(tokens[i] as string);
+    if (!match) {
+      return null;
+    }
+    const magnitude = match[2] !== undefined ? Number(match[2]) : parseInt(match[3] as string, 16);
+    const value = match[1] === '-' ? -magnitude : magnitude;
+    if (!(value >= -128 && value <= 255)) {
+      return null;
+    }
+    bytes[i] = value & 0xff;
+  }
+  return bytes;
+}
+
+/**
+ * Where the list of numbers is: after the first opening bracket, within the
+ * first characters, that a number follows, up to the first closing bracket;
+ * or, with no bracket, the whole text when it starts with a number.
+ */
+function numberSpan(text: string): [number, number] | null {
+  const limit = Math.min(text.length, MAX_PREFIX + 1);
+  for (let i = 0; i < limit; i++) {
+    if (!OPENERS.includes(text[i] as string)) {
+      continue;
+    }
+    let start = i + 1;
+    while (start < text.length && start - i <= MAX_GAP && isSpace(text.charCodeAt(start))) {
+      start++;
+    }
+    if (!startsNumber(text, start)) {
+      continue;
+    }
+    let end = start;
+    while (end < text.length && !CLOSERS.includes(text[end] as string)) {
+      end++;
+    }
+    return text.length - end > MAX_SUFFIX ? null : [start, end];
+  }
+  let start = 0;
+  while (start < text.length && start <= MAX_GAP && isSpace(text.charCodeAt(start))) {
+    start++;
+  }
+  return startsNumber(text, start) ? [start, text.length] : null;
+}
+
+function startsNumber(text: string, at: number): boolean {
+  return isDigit(text.charCodeAt(at)) || (text[at] === '-' && isDigit(text.charCodeAt(at + 1)));
+}
+
+function isSpace(unit: number): boolean {
+  return unit === 0x20 || unit === 0x09 || unit === 0x0a || unit === 0x0d;
+}
+
+function isDigit(unit: number): boolean {
+  return unit >= 0x30 && unit <= 0x39;
+}
+
+/** A Python bytes literal, as repr() writes it: b'0\x82\x01"0\r\x06\t*\x86H…'. */
+function pythonBytes(text: string): Uint8Array | null {
+  const trimmed = text.trim();
+  const quote = trimmed[1];
+  if (trimmed.length < 4 || trimmed[0] !== 'b' || (quote !== "'" && quote !== '"') || trimmed[trimmed.length - 1] !== quote) {
+    return null;
+  }
+  const out: number[] = [];
+  const escapes: Record<string, number> = { n: 10, r: 13, t: 9, '\\': 92, "'": 39, '"': 34 };
+  for (let i = 2; i < trimmed.length - 1; i++) {
+    const unit = trimmed.charCodeAt(i);
+    if (unit !== 0x5c) {
+      if (unit < 0x20 || unit > 0x7e) {
+        return null;
+      }
+      out.push(unit);
+      continue;
+    }
+    const next = trimmed[i + 1] as string;
+    if (next === 'x') {
+      const value = parseInt(trimmed.slice(i + 2, i + 4), 16);
+      if (!/^[0-9a-fA-F]{2}$/.test(trimmed.slice(i + 2, i + 4))) {
+        return null;
+      }
+      out.push(value);
+      i += 3;
+    } else if (escapes[next] !== undefined) {
+      out.push(escapes[next] as number);
+      i += 1;
+    } else {
+      return null;
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+const DUMP_OFFSET = /^[0-9a-fA-F]{6,8}:?[ \t]+/;
+
+/**
+ * `hexdump -C` (offset, sixteen hex bytes, |text|) and `xxd` (offset:, eight
+ * groups of four hex digits, two spaces, text), line by line.
+ */
+function hexDumpBytes(text: string): Uint8Array | null {
+  let hex = '';
+  let lines = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const offset = DUMP_OFFSET.exec(line);
+    if (!offset) {
+      if (line.trim().length === 0 || /^[0-9a-fA-F]{6,8}$/.test(line.trim())) {
+        continue; // hexdump ends with the length as an offset alone
+      }
+      return null;
+    }
+    // xxd's offset ends with a colon and its text follows two spaces; the
+    // text of hexdump -C is between bars. Either text may hold the other's mark.
+    let body = line.slice(offset[0].length);
+    const end = offset[0].includes(':') ? body.indexOf('  ') : body.indexOf('|');
+    if (end >= 0) {
+      body = body.slice(0, end);
+    }
+    hex += body.replace(/[ \t]/g, '');
+    lines++;
+  }
+  return lines >= 2 && HEX.test(hex) ? hexToBytes(hex) : null;
+}
+
+/** An array of byte values, or an object keyed "0", "1", … as JSON.stringify(new Uint8Array(…)) writes it. */
+function jsonBytes(node: object): Uint8Array | null {
+  const values = Array.isArray(node) ? node : Object.keys(node).every((key, i) => key === String(i)) ? Object.values(node) : null;
+  if (!values || values.length < 16 || !values.every((v) => Number.isInteger(v) && v >= -128 && v <= 255)) {
+    return null;
+  }
+  return Uint8Array.from(values as number[], (v) => v & 0xff);
 }
 
 /** JSON that is a JWK, a JWKS or a list of keys, or holds one up to three levels down (a Keycloak realm's `public_key`). */
@@ -192,6 +362,13 @@ function jsonCarriesKey(text: string, depth: number): boolean {
     }
     if (typeof node === 'string') {
       return level > 0 && node.length >= 40 && depth < MAX_DEPTH && inspect(node, depth + 1) !== null;
+    }
+    if (typeof node === 'object') {
+      // DER as numbers: [48, 130, …], or Buffer's { type: "Buffer", data: [...] }.
+      const bytes = jsonBytes(node);
+      if (bytes && bytesAreKey(bytes)) {
+        return true;
+      }
     }
     if (Array.isArray(node)) {
       return node.some((item) => visit(item, level + 1));
@@ -268,15 +445,24 @@ function withoutTrailingWhitespace(bytes: Uint8Array): Uint8Array {
   return bytes.subarray(0, end);
 }
 
-/** UTF-16LE text, when the bytes look like it: a BOM, or a zero in every second byte. Windows PowerShell 5 writes files so. */
+/**
+ * UTF-16 text, when the bytes look like it: a BOM, or a zero in every second
+ * byte. Windows PowerShell 5 writes little-endian files so, and big-endian
+ * ones with -Encoding BigEndianUnicode.
+ */
 function utf16Text(bytes: Uint8Array): string | null {
-  const bom = bytes[0] === 0xff && bytes[1] === 0xfe;
-  if (!bom && !(bytes.length > 3 && bytes[1] === 0 && bytes[3] === 0)) {
+  const littleBom = bytes[0] === 0xff && bytes[1] === 0xfe;
+  const bigBom = bytes[0] === 0xfe && bytes[1] === 0xff;
+  const little = littleBom || (bytes.length > 3 && bytes[1] === 0 && bytes[3] === 0 && bytes[0] !== 0);
+  const big = bigBom || (bytes.length > 3 && bytes[0] === 0 && bytes[2] === 0 && bytes[1] !== 0);
+  if (!little && !big) {
     return null;
   }
   let text = '';
-  for (let i = bom ? 2 : 0; i + 1 < bytes.length; i += 2) {
-    text += String.fromCharCode((bytes[i] as number) | ((bytes[i + 1] as number) << 8));
+  for (let i = littleBom || bigBom ? 2 : 0; i + 1 < bytes.length; i += 2) {
+    const first = bytes[i] as number;
+    const second = bytes[i + 1] as number;
+    text += String.fromCharCode(little ? first | (second << 8) : (first << 8) | second);
   }
   return text;
 }

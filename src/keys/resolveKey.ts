@@ -3,7 +3,7 @@ import { type Algorithm, type HmacAlgorithm, isHmacAlgorithm } from '../types/al
 import { isBytes } from '../utils/bytes';
 import { describeValue } from '../utils/describe';
 import { utf8Encode } from '../utils/utf8';
-import { type JwtKey, keyMaterialOf, type KeyMaterial } from './JwtKey';
+import { type JwtKey, type KeyMaterial, keyMaterialOf, type KeyOperation, keyOperationsOf } from './JwtKey';
 import { describeKeyMaterial } from './keyMaterial';
 
 /** A bare HMAC secret, or a key from `importPEM` / `importJWK`. */
@@ -13,6 +13,8 @@ export interface ResolvedKey {
   readonly algorithm: Algorithm;
   readonly material: KeyMaterial;
   readonly kid: string | undefined;
+  /** From a JWK's key_ops; undefined when the key does not restrict them. */
+  readonly operations: readonly KeyOperation[] | undefined;
 }
 
 const HMAC_MIN_BYTES: Record<HmacAlgorithm, number> = { HS256: 32, HS384: 48, HS512: 64 };
@@ -36,7 +38,7 @@ export function resolveKey(key: KeyInput, algorithm: unknown): ResolvedKey {
       throw new JwtAlgorithmError(`A bare secret is an HMAC key; "algorithm" must be HS256, HS384 or HS512, not ${describeValue(chosen)}.`);
     }
     const secret = typeof key === 'string' ? utf8Encode(key) : key.slice();
-    return { algorithm: chosen, material: { kind: 'secret', secret }, kid: undefined };
+    return { algorithm: chosen, material: { kind: 'secret', secret }, kid: undefined, operations: undefined };
   }
   const material = keyMaterialOf(key);
   if (!material) {
@@ -45,7 +47,14 @@ export function resolveKey(key: KeyInput, algorithm: unknown): ResolvedKey {
   if (algorithm !== undefined && algorithm !== key.algorithm) {
     throw new JwtAlgorithmError(`This key is bound to ${key.algorithm}; it cannot be used as ${describeValue(algorithm)}.`);
   }
-  return { algorithm: key.algorithm, material, kid: key.kid };
+  return { algorithm: key.algorithm, material, kid: key.kid, operations: keyOperationsOf(key) };
+}
+
+/** RFC 7517 §4.3: a JWK whose key_ops leave out an operation must not be used for it. */
+export function assertKeyOperation(resolved: ResolvedKey, operation: KeyOperation): void {
+  if (resolved.operations !== undefined && !resolved.operations.includes(operation)) {
+    throw new JwtKeyError(`The JWK's "key_ops" allow ${resolved.operations.map((op) => `"${op}"`).join(' and ')} only, not "${operation}".`);
+  }
 }
 
 /**

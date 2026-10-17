@@ -17,6 +17,7 @@ import {
   type EcCurve,
   type JwtKey,
   type KeyMaterial,
+  type KeyOperation,
   MAX_RSA_BITS,
   MAX_RSA_EXPONENT_BITS,
   rsaPrivatePartsMatch,
@@ -37,6 +38,16 @@ export function unsupportedReason(jwk: Jwk): string | null {
   if (type !== null) {
     return type;
   }
+  const ops = jwk.key_ops as readonly unknown[] | undefined;
+  if (ops !== undefined) {
+    // RFC 7517 §4.3: use and key_ops, when both are given, must agree.
+    if (jwk.use === 'sig' && ops.some((op) => op !== 'sign' && op !== 'verify')) {
+      return `key_ops ${describeValue(ops)} with use "sig"`;
+    }
+    if (jwk.kty !== 'oct' && jwk.d === undefined && !ops.includes('verify')) {
+      return `key_ops ${describeValue(ops)} on a public key, which can only verify`;
+    }
+  }
   if (jwk.alg !== undefined && !isAlgorithm(jwk.alg)) {
     // RFC 9864 names Ed25519 signatures "Ed25519"; this library still calls them EdDSA.
     return jwk.alg === 'Ed25519' ? 'alg "Ed25519" (RFC 9864) is not supported yet; EdDSA is' : `alg ${describeValue(jwk.alg)}`;
@@ -44,10 +55,16 @@ export function unsupportedReason(jwk: Jwk): string | null {
   return null;
 }
 
+// JWE key-management algorithms (RFC 7518 §4): an encryption key, even without "use".
+const ENCRYPTION_ALG = /^(?:RSA1_5|RSA-OAEP(?:-\d{3})?|ECDH-ES(?:\+A\d{3}KW)?|A\d{3}(?:GCM)?KW|dir|PBES2-HS\d{3}\+A\d{3}KW)$/;
+
 /** Why a JWK is not a signature key of a supported type, or null. `createJWKS` leaves such keys out silently. */
 export function unsupportedType(jwk: Jwk): string | null {
   if (jwk.use !== undefined && jwk.use !== 'sig') {
     return `use ${describeValue(jwk.use)}`;
+  }
+  if (typeof jwk.alg === 'string' && ENCRYPTION_ALG.test(jwk.alg)) {
+    return `alg ${describeValue(jwk.alg)}, for encryption`;
   }
   const ops = jwk.key_ops;
   if (ops !== undefined && !(Array.isArray(ops) && ops.some((op) => op === 'sign' || op === 'verify'))) {
@@ -98,7 +115,9 @@ export function importJWK(jwk: Jwk, algorithm?: Algorithm): JwtKey {
       }').`,
     );
   }
-  return createKey(material, bound, jwk.kid);
+  const ops: unknown = jwk.key_ops;
+  const allowed = Array.isArray(ops) ? ops.filter((op): op is KeyOperation => op === 'sign' || op === 'verify') : undefined;
+  return createKey(material, bound, jwk.kid, allowed);
 }
 
 function impliedAlgorithm(material: KeyMaterial): Algorithm | undefined {
@@ -189,7 +208,7 @@ function rsaInteger(jwk: Jwk, name: string, maxBits: number): bigint {
 }
 
 function member(jwk: Jwk, name: string, length?: number): Uint8Array {
-  const value = jwk[name];
+  const value = (jwk as Readonly<Record<string, unknown>>)[name];
   if (typeof value !== 'string') {
     throw new JwtKeyError(`The ${String(jwk.kty)} JWK is missing "${name}".`);
   }

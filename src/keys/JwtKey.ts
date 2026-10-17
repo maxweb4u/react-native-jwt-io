@@ -16,6 +16,9 @@ export type KeyMaterial =
 
 export type KeyType = 'secret' | 'public' | 'private';
 
+/** The JWS operations a JWK's `key_ops` allows (RFC 7517 §4.3). */
+export type KeyOperation = 'sign' | 'verify';
+
 /**
  * An imported key, bound to exactly one algorithm (RFC 8725 §3.1).
  * Create one with `importPEM`, `importJWK`, or through `createJWKS`.
@@ -30,6 +33,8 @@ export interface JwtKey {
 // The material lives outside the object, so a key cannot be forged from a
 // plain object literal and its secret parts do not show up when it is logged.
 const materials = new WeakMap<object, KeyMaterial>();
+// Only for a JWK with key_ops; any other key may do what its material allows.
+const operations = new WeakMap<object, readonly KeyOperation[]>();
 
 const EC_CURVE_FOR: Partial<Record<Algorithm, EcCurve>> = {
   ES256: 'P-256',
@@ -129,7 +134,7 @@ export function rsaPrivatePartsMatch(n: bigint, e: bigint, d: bigint, p: bigint,
   return (e * d) % lambda === one;
 }
 
-export function createKey(material: KeyMaterial, algorithm: Algorithm, kid?: string): JwtKey {
+export function createKey(material: KeyMaterial, algorithm: Algorithm, kid?: string, allowed?: readonly KeyOperation[]): JwtKey {
   assertKeyFitsAlgorithm(material, algorithm);
   const hasPrivate =
     material.kind === 'rsa' ? material.d !== undefined : material.kind === 'secret' ? false : material.privateKey !== undefined;
@@ -139,7 +144,14 @@ export function createKey(material: KeyMaterial, algorithm: Algorithm, kid?: str
     ...(kid !== undefined ? { kid } : {}),
   });
   materials.set(key, material);
+  if (allowed !== undefined) {
+    operations.set(key, Object.freeze([...allowed]));
+  }
   return key;
+}
+
+export function keyOperationsOf(key: object): readonly KeyOperation[] | undefined {
+  return operations.get(key);
 }
 
 export function keyMaterialOf(key: unknown): KeyMaterial | undefined {

@@ -2,10 +2,11 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha256, sha384, sha512 } from '@noble/hashes/sha2.js';
 import * as rsa from 'micro-rsa-dsa-dh/rsa.js';
 import { JwtKeyError } from '../errors/errors';
-import { assertRandomSource, hasRandomSource } from '../host/random';
+import { assertRandomSource, randomSourceWorks } from '../host/random';
 import { canSign, type KeyMaterial } from '../keys/JwtKey';
 import { type Algorithm } from '../types/algorithm';
 import { equalBytes } from '../utils/bytes';
+import { describeValue } from '../utils/describe';
 import { EC_FIELD_BYTES, ecdsaCurves, ed25519 } from './curves';
 
 /**
@@ -54,10 +55,11 @@ export function signBytes(algorithm: Algorithm, material: KeyMaterial, data: Uin
     // The crypto packages throw plain Errors for keys they cannot use. With
     // blinding, micro-rsa-dsa-dh checks the result against e itself and
     // throws for a d that does not belong to n and e — the case below.
-    if (material.kind === 'rsa' && (error as Error).message === 'RSA private operation failed') {
+    const message = error instanceof Error ? error.message : describeValue(error);
+    if (material.kind === 'rsa' && message === 'RSA private operation failed') {
       throw new JwtKeyError(RSA_MISMATCH);
     }
-    throw new JwtKeyError(`Signing with this ${algorithm} key failed: ${(error as Error).message}`);
+    throw new JwtKeyError(`Signing with this ${algorithm} key failed: ${message}`);
   }
   // An RSA JWK may carry d without the primes, so nothing proved at import
   // that d belongs to n and e. One public-key operation — about 1% of the
@@ -75,11 +77,12 @@ function signWith(algorithm: Algorithm, material: KeyMaterial, data: Uint8Array)
       return hmac(hashOf(algorithm), material.secret, data);
     case 'rsa':
       // With e, micro-rsa-dsa-dh blinds the private operation against timing
-      // attacks, which takes random numbers. Without a random source (Hermes
-      // alone), RS* signing stays unblinded rather than failing; PS* has
-      // already required one. See memory_bank/domain/keys.md#rsa-blinding.
+      // attacks, which takes random numbers. Without a working random source
+      // (Hermes alone, or a broken polyfill), RS* signing stays unblinded
+      // rather than failing or looping; PS* has already required one.
+      // See memory_bank/domain/keys.md#rsa-blinding.
       return rsaSigner(algorithm).sign(
-        hasRandomSource() ? { n: material.n, d: material.d as bigint, e: material.e } : { n: material.n, d: material.d as bigint },
+        randomSourceWorks(material.n) ? { n: material.n, d: material.d as bigint, e: material.e } : { n: material.n, d: material.d as bigint },
         data,
       );
     case 'ec':

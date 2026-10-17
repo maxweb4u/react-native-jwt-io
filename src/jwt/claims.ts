@@ -2,7 +2,7 @@ import { JwtClaimError, JwtExpiredError, JwtNotBeforeError, JwtOptionError } fro
 import { type JwtHeader, type JwtPayload } from '../types/jwt';
 import { type Duration, type VerifyOptions } from '../types/options';
 import { describeValue } from '../utils/describe';
-import { fromNumericDate, MAX_CLOCK_TOLERANCE_SECONDS, MAX_DATE_SECONDS, parseDuration } from '../utils/time';
+import { fromNumericDate, MAX_CLOCK_TOLERANCE_SECONDS, MAX_DATE_SECONDS, MAX_PLAUSIBLE_NUMERIC_DATE, parseDuration } from '../utils/time';
 
 /** `verify`'s claim options, checked and normalized before the token is read. */
 export interface ClaimRules {
@@ -24,26 +24,28 @@ export interface ClaimRules {
  * reaches the claim checks — otherwise an expired or forged token would hide it.
  */
 export function claimRules(options: VerifyOptions): ClaimRules {
-  const maxAge = durationOption(options.maxTokenAge, 'maxTokenAge');
+  // Each option read once: a getter must not answer one value to the check and another to the use.
+  const { maxTokenAge, subject, typ, issuer, audience, requiredClaims } = options;
+  const maxAge = durationOption(maxTokenAge, 'maxTokenAge');
   if (maxAge === 0) {
     throw new JwtOptionError('maxTokenAge', '"maxTokenAge" is 0 seconds: every token would be too old. Give a positive duration.');
   }
-  if (options.subject !== undefined && typeof options.subject !== 'string') {
+  if (subject !== undefined && typeof subject !== 'string') {
     throw new JwtOptionError('subject', 'The "subject" option must be a string.');
   }
-  if (options.typ !== undefined && typeof options.typ !== 'string') {
+  if (typ !== undefined && typeof typ !== 'string') {
     throw new JwtOptionError('typ', 'The "typ" option must be a string.');
   }
   return {
     now: currentSeconds(options.now),
     tolerance: clockToleranceOption(options.clockTolerance),
-    maxTokenAge: maxAge === undefined ? undefined : { seconds: maxAge, label: options.maxTokenAge as Duration },
+    maxTokenAge: maxAge === undefined ? undefined : { seconds: maxAge, label: maxTokenAge as Duration },
     // Not empty: an empty list would refuse every token, as if the token were at fault.
-    issuers: options.issuer === undefined ? undefined : stringList(options.issuer, 'issuer', { nonEmpty: true }),
-    audiences: options.audience === undefined ? undefined : stringList(options.audience, 'audience', { nonEmpty: true }),
-    subject: options.subject,
-    typ: options.typ,
-    requiredClaims: options.requiredClaims === undefined ? [] : stringList(options.requiredClaims, 'requiredClaims'),
+    issuers: issuer === undefined ? undefined : stringList(issuer, 'issuer', { nonEmpty: true }),
+    audiences: audience === undefined ? undefined : stringList(audience, 'audience', { nonEmpty: true }),
+    subject,
+    typ,
+    requiredClaims: requiredClaims === undefined ? [] : stringList(requiredClaims, 'requiredClaims'),
     ignoreExpiration: booleanOption(options.ignoreExpiration, 'ignoreExpiration'),
     ignoreNotBefore: booleanOption(options.ignoreNotBefore, 'ignoreNotBefore'),
   };
@@ -85,20 +87,20 @@ export function validateClaims(header: JwtHeader, payload: JwtPayload, rules: Cl
   }
 
   if (rules.issuers !== undefined && !rules.issuers.includes(payload.iss as string)) {
-    throw new JwtClaimError('iss', `Unexpected issuer ${JSON.stringify(payload.iss)}.`);
+    throw new JwtClaimError('iss', `Unexpected issuer ${describeValue(payload.iss)}.`);
   }
   if (rules.audiences !== undefined) {
     const expected = rules.audiences;
     const actual = typeof payload.aud === 'string' ? [payload.aud] : (payload.aud ?? []);
     if (!actual.some((aud) => expected.includes(aud))) {
-      throw new JwtClaimError('aud', `Unexpected audience ${JSON.stringify(payload.aud)}.`);
+      throw new JwtClaimError('aud', `Unexpected audience ${describeValue(payload.aud)}.`);
     }
   }
   if (rules.subject !== undefined && payload.sub !== rules.subject) {
-    throw new JwtClaimError('sub', `Unexpected subject ${JSON.stringify(payload.sub)}.`);
+    throw new JwtClaimError('sub', `Unexpected subject ${describeValue(payload.sub)}.`);
   }
   if (rules.typ !== undefined && (typeof header.typ !== 'string' || normalizeTyp(header.typ) !== normalizeTyp(rules.typ))) {
-    throw new JwtClaimError('typ', `Unexpected header "typ" ${JSON.stringify(header.typ)}.`);
+    throw new JwtClaimError('typ', `Unexpected header "typ" ${describeValue(header.typ)}.`);
   }
   for (const claim of rules.requiredClaims) {
     if (!Object.prototype.hasOwnProperty.call(payload, claim)) {
@@ -147,14 +149,19 @@ export function validateRegisteredClaims(payload: Record<string, unknown>): void
   if (aud !== undefined && typeof aud !== 'string' && !(Array.isArray(aud) && aud.every((a) => typeof a === 'string'))) {
     throw new JwtClaimError('aud', '"aud" must be a string or an array of strings.');
   }
-  for (const name of ['exp', 'nbf', 'iat'] as const) {
+  // iat first: when a payload passed to sign has a millisecond iat, the exp
+  // and nbf computed from it are off too, and iat is the cause to name.
+  for (const name of ['iat', 'exp', 'nbf'] as const) {
     numericClaim(payload, name);
   }
 }
 
 /**
  * A time claim must be a finite number when present — a string `exp` is not
- * "no expiry" — and inside the range a Date can represent.
+ * "no expiry" — inside the range a Date can represent, and not past 1e11
+ * (the year 5138): such a value is milliseconds, and read as seconds a token
+ * that expired an hour ago would never expire. Refused in reading as in
+ * signing; no issuer means it.
  */
 export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): number | undefined {
   const value = payload[name];
@@ -166,6 +173,12 @@ export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): 
   }
   if (Math.abs(value) > MAX_DATE_SECONDS) {
     throw new JwtClaimError(name, `"${name}" is ${value}, outside the range of dates (±${MAX_DATE_SECONDS} seconds).`);
+  }
+  if (value > MAX_PLAUSIBLE_NUMERIC_DATE) {
+    throw new JwtClaimError(
+      name,
+      `"${name}" is ${value}, which looks like milliseconds or an overflow. JWT times are seconds: use Math.floor(Date.now() / 1000).`,
+    );
   }
   return value;
 }

@@ -27,7 +27,7 @@ export interface SkippedJwk {
 
 export interface CreateJwksOptions {
   /** The algorithm for RSA and `oct` keys that carry no `alg`, as some issuers publish them. */
-  readonly algorithm?: Algorithm;
+  readonly algorithm?: Algorithm | undefined;
 }
 
 const keySets = new WeakSet<object>();
@@ -41,13 +41,15 @@ const keySets = new WeakSet<object>();
  * planned for 2.1 (memory_bank/product/roadmap.md).
  */
 export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKeySet {
-  if (!isPlainObject(jwks) || !Array.isArray(jwks.keys)) {
-    throw new JwtKeyError('createJWKS expects a JWKS object: { keys: [...] }.');
-  }
+  // Options first, as everywhere (ADR-008).
   const opts: CreateJwksOptions = options ?? {};
   assertKnownOptions(opts, ['algorithm']);
   // Checked here: inside the loop an unknown name would only skip every key it applies to.
-  assertAlgorithmOption(opts.algorithm);
+  const setAlgorithm = opts.algorithm;
+  assertAlgorithmOption(setAlgorithm);
+  if (!isPlainObject(jwks) || !Array.isArray(jwks.keys)) {
+    throw new JwtKeyError('createJWKS expects a JWKS object: { keys: [...] }.');
+  }
   const keys: JwtKey[] = [];
   const skipped: SkippedJwk[] = [];
   jwks.keys.forEach((jwk, index) => {
@@ -60,14 +62,25 @@ export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKe
     if (unsupportedType(jwk) !== null) {
       return;
     }
-    const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? opts.algorithm : undefined;
+    const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? setAlgorithm : undefined;
     try {
+      // A set is for verifying: a key its key_ops keep from that would only be picked to fail.
+      if (Array.isArray(jwk.key_ops) && !jwk.key_ops.includes('verify')) {
+        throw new JwtKeyError(`This JWK's "key_ops" ${describeValue(jwk.key_ops)} do not include "verify".`);
+      }
       keys.push(importJWK(jwk, algorithm));
     } catch (error) {
       if (!(error instanceof JwtKeyError)) {
         throw error;
       }
-      skipped.push(Object.freeze({ index, ...(typeof jwk.kid === 'string' ? { kid: jwk.kid } : {}), reason: error.message }));
+      // importJWK's advice names importJWK; here the set takes the algorithm (Microsoft Entra publishes RSA keys without alg).
+      const reason =
+        algorithm === undefined && jwk.alg === undefined && /has no "alg"/.test(error.message)
+          ? `This ${jwk.kty as string} JWK has no "alg", and its type allows several algorithms. Pass one for the set: createJWKS(jwks, { algorithm: '${
+              jwk.kty === 'oct' ? 'HS256' : 'RS256'
+            }' }).`
+          : error.message;
+      skipped.push(Object.freeze({ index, ...(typeof jwk.kid === 'string' ? { kid: jwk.kid } : {}), reason }));
     }
   });
   const set: JwtKeySet = Object.freeze({ keys: Object.freeze(keys), skipped: Object.freeze(skipped) });

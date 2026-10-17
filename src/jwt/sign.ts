@@ -1,8 +1,9 @@
 import { signBytes } from '../crypto/backend';
 import { JwtClaimError, JwtOptionError } from '../errors/errors';
-import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
+import { assertKeyOperation, assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { type SignOptions } from '../types/options';
 import { base64UrlEncode } from '../utils/base64';
+import { describeValue } from '../utils/describe';
 import { isPlainObject, parseJson } from '../utils/json';
 import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
 import { MAX_PLAUSIBLE_NUMERIC_DATE } from '../utils/time';
@@ -37,7 +38,9 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   // a JwtOptionError, not hidden behind a payload or key error.
   const opts: SignOptions = options ?? {};
   assertKnownOptions(opts, SIGN_OPTIONS);
-  assertAlgorithmOption(opts.algorithm);
+  // Read once: a getter must not answer one value to the check and another to the use.
+  const algorithm = opts.algorithm;
+  assertAlgorithmOption(algorithm);
   const allowShortSecret = booleanOption(opts.allowShortSecret, 'allowShortSecret');
   const noTimestamp = booleanOption(opts.noTimestamp, 'noTimestamp');
   const now = Math.floor(currentSeconds(opts.now));
@@ -45,6 +48,10 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
     throw new JwtOptionError('now', `The "now" option is ${now} seconds since 1970, which no signing time can be.`);
   }
   const expiresIn = durationOption(opts.expiresIn, 'expiresIn');
+  if (expiresIn === 0) {
+    // exp = iat: verify refuses the token the moment it is issued.
+    throw new JwtOptionError('expiresIn', `"expiresIn" is ${describeValue(opts.expiresIn)}, under a second: the token would expire as it is issued.`);
+  }
   const notBefore = durationOption(opts.notBefore, 'notBefore');
   const issuer = stringOption(opts.issuer, 'issuer');
   const subject = stringOption(opts.subject, 'subject');
@@ -52,17 +59,28 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   const audience = audienceOption(opts.audience);
   const keyId = stringOption(opts.keyId, 'keyId');
   const extraHeader = headerOption(opts.header);
+  if (keyId !== undefined && extraHeader.kid !== undefined && extraHeader.kid !== keyId) {
+    throw new JwtOptionError('keyId', 'Both options.keyId and options.header.kid are set, to different values; use one.');
+  }
 
   if (!isPlainObject(payload)) {
     throw new JwtClaimError('payload', 'The payload must be a plain object.');
   }
-  const claims: Record<string, unknown> = { ...payload };
+  // Own keys one by one, not a spread: Babel's loose object spread (the React
+  // Native preset) is Object.assign, which turns an own "__proto__" key into
+  // the copy's prototype — iat and iss would be inherited, not serialized.
+  const claims: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(payload)) {
+    if (name !== '__proto__') {
+      claims[name] = value;
+    }
+  }
   // The payload as given, before options add to it: a bad aud or a
   // millisecond iat is the payload's fault, whatever the options say.
   validateRegisteredClaims(claims);
-  assertPlausibleTimes(claims);
 
-  const resolved = resolveKey(key, opts.algorithm);
+  const resolved = resolveKey(key, algorithm);
+  assertKeyOperation(resolved, 'sign');
   assertSecretStrength(resolved, allowShortSecret);
 
   if (claims.iat === undefined && !noTimestamp) {
@@ -77,7 +95,8 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   setOnce(claims, 'aud', audience, 'audience');
 
   const header: Record<string, unknown> = { alg: resolved.algorithm, typ: 'JWT', ...extraHeader };
-  const kid = keyId ?? resolved.kid;
+  // What the caller says beats what the key carries.
+  const kid = keyId ?? (extraHeader.kid as string | undefined) ?? resolved.kid;
   if (kid !== undefined) {
     header.kid = kid;
   }
@@ -85,7 +104,7 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   // Validated as serialized, not as passed: a `toJSON` method or a getter can
   // make JSON.stringify emit something other than what was checked above.
   const headerText = serialize(header, 'header');
-  const headerEcho = parseJson(headerText) as Record<string, unknown>;
+  const headerEcho = reparse(headerText, 'header') as Record<string, unknown>;
   if (
     !isPlainObject(headerEcho) ||
     headerEcho.alg !== resolved.algorithm ||
@@ -100,12 +119,11 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
     }
   }
   const payloadText = serialize(claims, 'payload');
-  const payloadEcho = parseJson(payloadText);
+  const payloadEcho = reparse(payloadText, 'payload');
   if (!isPlainObject(payloadEcho)) {
     throw new JwtClaimError('payload', 'The payload does not serialize to a JSON object (a toJSON method?).');
   }
   validateRegisteredClaims(payloadEcho);
-  assertPlausibleTimes(payloadEcho);
 
   const signingInput = `${base64UrlEncode(utf8Encode(headerText))}.${base64UrlEncode(utf8Encode(payloadText))}`;
   const signature = signBytes(resolved.algorithm, resolved.material, utf8Encode(signingInput));
@@ -130,19 +148,6 @@ function setRelative(
     throw new JwtOptionError(option, `options.${option} puts "${name}" at ${value} seconds since 1970, past any plausible date.`);
   }
   claims[name] = value;
-}
-
-/** iat first: a millisecond iat also pushes the exp and nbf computed from it. */
-function assertPlausibleTimes(claims: Record<string, unknown>): void {
-  for (const name of ['iat', 'exp', 'nbf'] as const) {
-    const value = claims[name];
-    if (typeof value === 'number' && value > MAX_PLAUSIBLE_NUMERIC_DATE) {
-      throw new JwtClaimError(
-        name,
-        `"${name}" is ${value}, which looks like milliseconds or an overflow. JWT times are seconds: use Math.floor(Date.now() / 1000).`,
-      );
-    }
-  }
 }
 
 function setOnce(claims: Record<string, unknown>, name: string, value: unknown, option: string): void {
@@ -187,20 +192,49 @@ function headerOption(value: unknown): Record<string, unknown> {
       header[name] = parameter;
     }
   }
+  // As serialized, here with the other options rather than after the payload
+  // and the key: a toJSON, a BigInt or a cycle, and the parameters verify
+  // requires to be strings.
+  const echo = reparse(serialize(header, 'header'), 'header');
+  if (!isPlainObject(echo) || RESERVED_HEADER.some((name) => name in echo)) {
+    throw new JwtOptionError('header', 'options.header does not serialize to a plain object without alg, crit and b64 (a toJSON method?).');
+  }
+  for (const name of STRING_HEADER) {
+    if (echo[name] !== undefined && typeof echo[name] !== 'string') {
+      throw new JwtOptionError(`header.${name}`, `The header "${name}" must be a string.`);
+    }
+  }
   return header;
 }
 
 /** The header comes from options, the payload is claims: each failure is reported as what it is. */
+function fail(name: 'header' | 'payload', message: string): Error {
+  return name === 'header' ? new JwtOptionError(name, message) : new JwtClaimError(name, message);
+}
+
 function serialize(value: Record<string, unknown>, name: 'header' | 'payload'): string {
-  const fail = (message: string): Error => (name === 'header' ? new JwtOptionError(name, message) : new JwtClaimError(name, message));
   let text: string | undefined;
   try {
     text = JSON.stringify(value);
   } catch (error) {
-    throw fail(`The ${name} cannot be serialized to JSON: ${(error as Error).message}`);
+    // A toJSON may throw anything, null included.
+    const reason = error instanceof Error ? error.message : describeValue(error);
+    throw fail(name, `The ${name} cannot be serialized to JSON: ${reason}`);
   }
   if (typeof text !== 'string') {
-    throw fail(`The ${name} does not serialize to JSON.`);
+    throw fail(name, `The ${name} does not serialize to JSON.`);
   }
   return text;
+}
+
+/**
+ * The serialized text read back. JSON.stringify accepts nesting that parsing
+ * cannot take — Hermes parses 512 levels at most — so the echo can fail too.
+ */
+function reparse(text: string, name: 'header' | 'payload'): unknown {
+  try {
+    return parseJson(text);
+  } catch {
+    throw fail(name, `The ${name} is nested too deeply to be read back.`);
+  }
 }
