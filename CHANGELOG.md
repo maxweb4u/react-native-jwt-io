@@ -42,6 +42,10 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
 
 - `createJWKS(set, { algorithm: 'RS999' })` skipped every key the option
   applied to; an unknown algorithm name is now refused.
+- `sign` threw a raw `RangeError` for a payload or header nested a few
+  thousand levels deep, and a `TypeError` when a `toJSON` threw `null`; both
+  are library errors now, and `verify` says "nested too deeply" rather than
+  "not valid JSON".
 
 ### Security
 

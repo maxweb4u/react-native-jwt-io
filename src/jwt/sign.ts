@@ -3,6 +3,7 @@ import { JwtClaimError, JwtOptionError } from '../errors/errors';
 import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { type SignOptions } from '../types/options';
 import { base64UrlEncode } from '../utils/base64';
+import { describeValue } from '../utils/describe';
 import { isPlainObject, parseJson } from '../utils/json';
 import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
 import { MAX_PLAUSIBLE_NUMERIC_DATE } from '../utils/time';
@@ -77,7 +78,7 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   // Validated as serialized, not as passed: a `toJSON` method or a getter can
   // make JSON.stringify emit something other than what was checked above.
   const headerText = serialize(header, 'header');
-  const headerEcho = parseJson(headerText) as Record<string, unknown>;
+  const headerEcho = reparse(headerText, 'header') as Record<string, unknown>;
   if (
     !isPlainObject(headerEcho) ||
     headerEcho.alg !== resolved.algorithm ||
@@ -92,7 +93,7 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
     }
   }
   const payloadText = serialize(claims, 'payload');
-  const payloadEcho = parseJson(payloadText);
+  const payloadEcho = reparse(payloadText, 'payload');
   if (!isPlainObject(payloadEcho)) {
     throw new JwtClaimError('payload', 'The payload does not serialize to a JSON object (a toJSON method?).');
   }
@@ -153,16 +154,33 @@ function audienceOption(value: unknown): string | string[] | undefined {
 }
 
 /** The header comes from options, the payload is claims: each failure is reported as what it is. */
+function fail(name: 'header' | 'payload', message: string): Error {
+  return name === 'header' ? new JwtOptionError(name, message) : new JwtClaimError(name, message);
+}
+
 function serialize(value: Record<string, unknown>, name: 'header' | 'payload'): string {
-  const fail = (message: string): Error => (name === 'header' ? new JwtOptionError(name, message) : new JwtClaimError(name, message));
   let text: string | undefined;
   try {
     text = JSON.stringify(value);
   } catch (error) {
-    throw fail(`The ${name} cannot be serialized to JSON: ${(error as Error).message}`);
+    // A toJSON may throw anything, null included.
+    const reason = error instanceof Error ? error.message : describeValue(error);
+    throw fail(name, `The ${name} cannot be serialized to JSON: ${reason}`);
   }
   if (typeof text !== 'string') {
-    throw fail(`The ${name} does not serialize to JSON.`);
+    throw fail(name, `The ${name} does not serialize to JSON.`);
   }
   return text;
+}
+
+/**
+ * The serialized text read back. JSON.stringify accepts nesting that parsing
+ * cannot take — Hermes parses 512 levels at most — so the echo can fail too.
+ */
+function reparse(text: string, name: 'header' | 'payload'): unknown {
+  try {
+    return parseJson(text);
+  } catch {
+    throw fail(name, `The ${name} is nested too deeply to be read back.`);
+  }
 }

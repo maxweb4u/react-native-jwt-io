@@ -75,8 +75,11 @@ function decodeJsonSegment(segment: string, name: 'header' | 'payload'): Record<
   let value: unknown;
   try {
     value = parseJson(text);
-  } catch {
-    throw new JwtMalformedError(`The ${name} is not valid JSON.`);
+  } catch (error) {
+    // V8 throws a RangeError past its nesting limit, Hermes a SyntaxError past 512 levels.
+    throw new JwtMalformedError(
+      error instanceof RangeError ? `The ${name} is nested too deeply to parse.` : `The ${name} is not valid JSON (or is nested too deeply to parse).`,
+    );
   }
   if (!isPlainObject(value)) {
     throw new JwtMalformedError(`The ${name} must be a JSON object.`);
