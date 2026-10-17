@@ -1,6 +1,6 @@
 import { signBytes } from '../crypto/backend';
 import { JwtClaimError, JwtOptionError } from '../errors/errors';
-import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
+import { assertKeyOperation, assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { type SignOptions } from '../types/options';
 import { base64UrlEncode } from '../utils/base64';
 import { describeValue } from '../utils/describe';
@@ -80,6 +80,7 @@ export function sign(payload: object, key: KeyInput, options: SignOptions = {}):
   validateRegisteredClaims(claims);
 
   const resolved = resolveKey(key, algorithm);
+  assertKeyOperation(resolved, 'sign');
   assertSecretStrength(resolved, allowShortSecret);
 
   if (claims.iat === undefined && !noTimestamp) {

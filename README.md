@@ -156,7 +156,7 @@ const strong = sign({ sub: 'u1' }, SECRET_64_BYTES, { algorithm: 'HS512' });
 | `isExpired(token, { clockTolerance?, now? }?)` | `boolean`; no `exp` means never |
 | `getExpiration(token)` | `Date \| null` |
 | `importPEM(pem, algorithm, { kid? }?)` | `JwtKey` — SPKI, PKCS#8, PKCS#1 (`RSA … KEY`), SEC1 (`EC PRIVATE KEY`); text around the block and an `EC PARAMETERS` block are ignored |
-| `importJWK(jwk, algorithm?)` | `JwtKey` — `RSA`, `EC`, `OKP` (Ed25519), `oct` |
+| `importJWK(jwk, algorithm?)` | `JwtKey` — `RSA`, `EC`, `OKP` (Ed25519), `oct`; `key_ops`, if present, limits the key to the operations it lists |
 | `createJWKS({ keys }, { algorithm? }?)` | `JwtKeySet` |
 | `hexToBytes(hex)` | `Uint8Array` |
 

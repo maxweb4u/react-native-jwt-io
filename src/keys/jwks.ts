@@ -64,6 +64,10 @@ export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKe
     }
     const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? setAlgorithm : undefined;
     try {
+      // A set is for verifying: a key its key_ops keep from that would only be picked to fail.
+      if (Array.isArray(jwk.key_ops) && !jwk.key_ops.includes('verify')) {
+        throw new JwtKeyError(`This JWK's "key_ops" ${describeValue(jwk.key_ops)} do not include "verify".`);
+      }
       keys.push(importJWK(jwk, algorithm));
     } catch (error) {
       if (!(error instanceof JwtKeyError)) {

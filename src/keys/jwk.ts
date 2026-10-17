@@ -17,6 +17,7 @@ import {
   type EcCurve,
   type JwtKey,
   type KeyMaterial,
+  type KeyOperation,
   MAX_RSA_BITS,
   MAX_RSA_EXPONENT_BITS,
   rsaPrivatePartsMatch,
@@ -36,6 +37,16 @@ export function unsupportedReason(jwk: Jwk): string | null {
   const type = unsupportedType(jwk);
   if (type !== null) {
     return type;
+  }
+  const ops = jwk.key_ops as readonly unknown[] | undefined;
+  if (ops !== undefined) {
+    // RFC 7517 §4.3: use and key_ops, when both are given, must agree.
+    if (jwk.use === 'sig' && ops.some((op) => op !== 'sign' && op !== 'verify')) {
+      return `key_ops ${describeValue(ops)} with use "sig"`;
+    }
+    if (jwk.kty !== 'oct' && jwk.d === undefined && !ops.includes('verify')) {
+      return `key_ops ${describeValue(ops)} on a public key, which can only verify`;
+    }
   }
   if (jwk.alg !== undefined && !isAlgorithm(jwk.alg)) {
     // RFC 9864 names Ed25519 signatures "Ed25519"; this library still calls them EdDSA.
@@ -104,7 +115,9 @@ export function importJWK(jwk: Jwk, algorithm?: Algorithm): JwtKey {
       }').`,
     );
   }
-  return createKey(material, bound, jwk.kid);
+  const ops: unknown = jwk.key_ops;
+  const allowed = Array.isArray(ops) ? ops.filter((op): op is KeyOperation => op === 'sign' || op === 'verify') : undefined;
+  return createKey(material, bound, jwk.kid, allowed);
 }
 
 function impliedAlgorithm(material: KeyMaterial): Algorithm | undefined {

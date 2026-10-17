@@ -63,6 +63,10 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   too — by `verify`, `decodeUnverified`, `isExpired` and `getExpiration` — as
   it was in signing: read as seconds, a token that expired an hour ago never
   expired. Stricter than `jose`.
+- A JWK's `key_ops` limits the key to the operations it lists: a key with
+  `["verify"]` does not sign; `use: "sig"` with an encryption operation, and a
+  public key without `verify`, are refused; `createJWKS` skips a key without
+  `verify`, with the reason.
 - `importPEM` refuses a PEM block that is not complete instead of reading the
   next one, reads a BEGIN line that ends with spaces, and says what a file of
   EC PARAMETERS alone is.

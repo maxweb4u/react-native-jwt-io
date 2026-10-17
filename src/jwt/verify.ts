@@ -1,7 +1,7 @@
 import { verifyBytes } from '../crypto/backend';
 import { JwtAlgorithmError, JwtMalformedError, JwtSignatureError } from '../errors/errors';
 import { isJwtKeySet, type JwtKeySet, selectKey } from '../keys/jwks';
-import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
+import { assertKeyOperation, assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { isAlgorithm } from '../types/algorithm';
 import { type DecodedJwt, type JwtPayload, type PayloadShape } from '../types/jwt';
 import { type VerifyOptions } from '../types/options';
@@ -72,6 +72,7 @@ export function verify<TPayload extends PayloadShape<TPayload> = JwtPayload>(
   if (resolved.algorithm !== alg) {
     throw new JwtAlgorithmError(`The token is signed with ${alg}, but the key is for ${resolved.algorithm}.`);
   }
+  assertKeyOperation(resolved, 'verify');
   assertSecretStrength(resolved, allowShortSecret);
   if (!verifyBytes(alg, resolved.material, signingInput, signature)) {
     throw new JwtSignatureError();

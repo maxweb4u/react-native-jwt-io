@@ -26,6 +26,7 @@ import { b64u, nodeKeyPair, pem, SECRET_32 } from './helpers/node';
 
 const code = (c: string) => expect.objectContaining({ code: c });
 const rsa = nodeKeyPair('rsa');
+const ec = nodeKeyPair('P-256');
 const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
 const der = (key: crypto.KeyObject) => key.export({ type: 'spki', format: 'der' });
 
@@ -210,6 +211,44 @@ describe('#9 an own __proto__ key in a payload to sign is dropped, whatever the 
     expect(json).not.toContain('admin');
     expect(JSON.parse(json)).toEqual({ sub: 'x', iat: 1_700_000_000 });
     expect(() => sign(payload, SECRET_32, { issuer: 'good' })).not.toThrow();
+  });
+});
+
+describe('#10 key_ops is honoured per operation (RFC 7517 §4.3)', () => {
+  const privateJwk = jwkOf(ec.privateKey);
+  const publicJwk = jwkOf(ec.publicKey);
+
+  it('a key whose key_ops leave out sign does not sign', () => {
+    const key = importJWK({ ...privateJwk, key_ops: ['verify'] });
+    expect(() => sign({}, key)).toThrow(/"key_ops" allow "verify" only, not "sign"/);
+    const signer = importJWK({ ...privateJwk, key_ops: ['sign'] });
+    expect(() => verify(sign({}, signer), signer)).toThrow(/"key_ops" allow "sign" only, not "verify"/);
+  });
+
+  it('sign and verify together, or no key_ops, allow both', () => {
+    for (const jwk of [{ ...privateJwk, key_ops: ['sign', 'verify'] }, privateJwk]) {
+      const key = importJWK(jwk);
+      expect(verify(sign({ a: 1 }, key), key).payload.a).toBe(1);
+    }
+  });
+
+  it('a public key whose key_ops leave out verify is refused at import', () => {
+    expect(() => importJWK({ ...publicJwk, key_ops: ['sign'] })).toThrow(/on a public key, which can only verify/);
+  });
+
+  it('use "sig" with an encryption operation is refused', () => {
+    expect(() => importJWK({ ...publicJwk, use: 'sig', key_ops: ['encrypt', 'verify'] })).toThrow(/with use "sig"/);
+  });
+
+  it('a key set skips a key that cannot verify, and says why', () => {
+    const set = createJWKS({ keys: [{ ...privateJwk, kid: 'a', key_ops: ['sign'] }, { ...publicJwk, kid: 'b', key_ops: ['verify'] }] });
+    expect(set.keys.map((key) => key.kid)).toEqual(['b']);
+    expect(set.skipped).toEqual([expect.objectContaining({ kid: 'a', reason: expect.stringMatching(/do not include "verify"/) })]);
+  });
+
+  it('HMAC JWKs keep both operations by default', () => {
+    const key = importJWK({ kty: 'oct', k: b64u(SECRET_32), alg: 'HS256', key_ops: ['sign'] });
+    expect(() => sign({}, key)).not.toThrow();
   });
 });
 
