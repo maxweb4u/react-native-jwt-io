@@ -62,7 +62,7 @@ Not changed: PEM text without its BEGIN/END lines still reads as an HMAC secret 
 
 ### Resolved: 1.x tombstones under `require` and Node ESM
 
-Found while re-checking the packed tarball: the tombstones lived on the default export only, so `require('react-native-jwt-io').encode` and a Node ESM default import got `undefined` and failed with `jwt.encode is not a function` instead of `JwtMigrationError`. Decided on 2026-10-15: `encode` and `decode` are also exported by name, as throwing tombstones — [ADR-006](adr/ADR-006-named-1x-tombstones.md), superseding ADR-004. `scripts/check-build.cjs` checks both loading paths on every `prepack`. Background: [_inbox/cjs-default-export-tombstones.md](_inbox/cjs-default-export-tombstones.md).
+Found while re-checking the packed tarball: the tombstones lived on the default export only, so `require('react-native-jwt-io').encode` and a Node ESM default import got `undefined` and failed with `jwt.encode is not a function` instead of `JwtMigrationError`. Decided on 2026-10-15: `encode` and `decode` are also exported by name, as throwing tombstones — [ADR-006](adr/ADR-006-named-1x-tombstones.md), superseding ADR-004. `scripts/check-build.cjs` checks both loading paths on every `prepack`. The measurement is in ADR-006's context.
 
 ## Review of 2026-10-16
 
