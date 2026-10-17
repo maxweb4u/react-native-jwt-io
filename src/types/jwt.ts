@@ -57,7 +57,7 @@ export interface DecodedJwt<TPayload = JwtPayload> {
   readonly payload: JwtPayload & Readonly<TPayload>;
 }
 
-/** A JSON Web Key as it appears in JSON (RFC 7517). Only the members this library reads are typed. */
+/** A JSON Web Key as it appears in JSON (RFC 7517). Only the members this library reads are typed; others are ignored. */
 export interface Jwk {
   readonly kty?: string;
   readonly alg?: string;
@@ -70,7 +70,23 @@ export interface Jwk {
   readonly x?: string;
   readonly y?: string;
   readonly k?: string;
-  readonly [member: string]: unknown;
+  readonly p?: string;
+  readonly q?: string;
+  readonly dp?: string;
+  readonly dq?: string;
+  readonly qi?: string;
+  readonly key_ops?: readonly string[];
+  // Registered (RFC 7517 §4, RFC 7518 §6.3.2.7, WebCrypto's ext), typed so that
+  // a JWK literal carrying them compiles; this library ignores them.
+  readonly x5u?: string;
+  readonly x5c?: readonly string[];
+  readonly x5t?: string;
+  readonly 'x5t#S256'?: string;
+  readonly oth?: readonly { readonly r?: string; readonly d?: string; readonly t?: string }[];
+  readonly ext?: boolean;
+  // No index signature: WebCrypto's JsonWebKey (crypto.subtle.exportKey('jwk'))
+  // has none, and would not be assignable. Unregistered members are accepted
+  // from values that are not literals, and ignored.
 }
 
 export interface JwkSet {

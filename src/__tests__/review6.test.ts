@@ -9,6 +9,7 @@ import {
   createJWKS,
   decodeUnverified,
   getExpiration,
+  importJWK,
   isExpired,
   JwtClaimError,
   JwtError,
@@ -18,8 +19,11 @@ import {
   sign,
   verify,
 } from '../index';
-import { type JwkSet } from '../types/jwt';
-import { b64u, SECRET_32 } from './helpers/node';
+import { type Jwk, type JwkSet } from '../types/jwt';
+import { b64u, nodeKeyPair, SECRET_32 } from './helpers/node';
+
+const rsa = nodeKeyPair('rsa');
+const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
 
 /** An HS256 token over `payload` (JSON text) and `header`, signed with SECRET_32. */
 function hs256(payload: string, header = '{"alg":"HS256","typ":"JWT"}'): string {
@@ -175,6 +179,22 @@ describe('#9 an own __proto__ key in a payload to sign is dropped, whatever the 
     expect(json).not.toContain('admin');
     expect(JSON.parse(json)).toEqual({ sub: 'x', iat: 1_700_000_000 });
     expect(() => sign(payload, SECRET_32, { issuer: 'good' })).not.toThrow();
+  });
+});
+
+describe('#13 a JWK literal may carry the registered members it does not use', () => {
+  it('compiles and imports', () => {
+    const jwk: Jwk = {
+      ...jwkOf(rsa.publicKey),
+      alg: 'RS256',
+      x5c: ['MIIB'],
+      x5t: 'abc',
+      'x5t#S256': 'def',
+      x5u: 'https://example.com/cert',
+      ext: true,
+    };
+    expect(importJWK(jwk).algorithm).toBe('RS256');
+    expect(createJWKS({ keys: [{ ...jwk, kid: 'k', oth: [] }] }).skipped).toEqual([]);
   });
 });
 

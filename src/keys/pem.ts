@@ -42,7 +42,7 @@ const CURVE_BY_OID: Record<string, EcCurve> = {
 
 export interface ImportOptions {
   /** Stored on the key and written to the header `kid` when signing. */
-  readonly kid?: string;
+  readonly kid?: string | undefined;
 }
 
 /**

@@ -179,7 +179,7 @@ function rsaInteger(jwk: Jwk, name: string, maxBits: number): bigint {
 }
 
 function member(jwk: Jwk, name: string, length?: number): Uint8Array {
-  const value = jwk[name];
+  const value = (jwk as Readonly<Record<string, unknown>>)[name];
   if (typeof value !== 'string') {
     throw new JwtKeyError(`The ${String(jwk.kty)} JWK is missing "${name}".`);
   }

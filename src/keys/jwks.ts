@@ -27,7 +27,7 @@ export interface SkippedJwk {
 
 export interface CreateJwksOptions {
   /** The algorithm for RSA and `oct` keys that carry no `alg`, as some issuers publish them. */
-  readonly algorithm?: Algorithm;
+  readonly algorithm?: Algorithm | undefined;
 }
 
 const keySets = new WeakSet<object>();

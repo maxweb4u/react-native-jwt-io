@@ -8,6 +8,7 @@ import type crypto from 'node:crypto';
 import {
   createJWKS,
   decodeUnverified,
+  importJWK,
   importPEM,
   sign,
   verify,
@@ -89,6 +90,37 @@ describe('#5 escaping in messages covers the other line breaks', () => {
       }
       expect(message).toContain('k\\u2028x');
     }
+  });
+});
+
+describe('#9 types', () => {
+  it('compile-time (npm run typecheck): undefined registered claims, and WebCrypto JWKs', () => {
+    const token = sign({ sub: 'u' }, SECRET_32);
+    // A claim that may be absent is undefined at run time, and may say so.
+    const sub: string | undefined = verify<{ sub: string | undefined; exp: number | undefined }>(token, SECRET_32).payload.sub;
+    // The DOM's JsonWebKey, as crypto.subtle.exportKey('jwk') returns it: no index signature.
+    interface DomJsonWebKey {
+      alg?: string;
+      crv?: string;
+      d?: string;
+      dp?: string;
+      dq?: string;
+      e?: string;
+      ext?: boolean;
+      k?: string;
+      key_ops?: string[];
+      kty?: string;
+      n?: string;
+      oth?: { d?: string; r?: string; t?: string }[];
+      p?: string;
+      q?: string;
+      qi?: string;
+      use?: string;
+      x?: string;
+      y?: string;
+    }
+    const webCrypto: DomJsonWebKey = { ...(jwkOf(ec.publicKey) as DomJsonWebKey), ext: true, key_ops: ['verify'] };
+    expect([sub, importJWK(webCrypto).algorithm]).toEqual(['u', 'ES256']);
   });
 });
 

@@ -41,6 +41,11 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   Readonly<T>`: `exp`, `sub` and the other registered claims stay typed, and
   `T` may narrow them (`sub: string`, or `string | undefined`) but not change
   their type (`exp: Date` does not compile).
+- Types: `Jwk` has no index signature, so WebCrypto's `JsonWebKey` is
+  assignable; the registered members it does not use (`x5c`, `x5t`,
+  `x5t#S256`, `x5u`, `oth`, `ext`) are typed, so a JWK literal carrying them
+  compiles; every option accepts an explicit `undefined` under
+  `exactOptionalPropertyTypes`.
 - A time claim above `1e11` is refused as milliseconds when a token is read
   too — by `verify`, `decodeUnverified`, `isExpired` and `getExpiration` — as
   it was in signing: read as seconds, a token that expired an hour ago never
