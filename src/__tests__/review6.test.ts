@@ -479,6 +479,19 @@ describe('#16 more dumps of a key are refused as secrets', () => {
   });
 });
 
+describe('#17 encryption keys in a set are left out silently', () => {
+  it.each(['RSA1_5', 'RSA-OAEP-256', 'ECDH-ES+A128KW', 'A128GCMKW', 'dir', 'PBES2-HS256+A128KW'])('%s', (alg) => {
+    const set = createJWKS({ keys: [{ ...jwkOf(rsa.publicKey), alg }, { kty: 'oct', k: b64u(SECRET_32), alg }] });
+    expect(set.keys).toEqual([]);
+    expect(set.skipped).toEqual([]);
+  });
+
+  it('an oct key without alg is skipped with the HS256 hint for the set', () => {
+    const set = createJWKS({ keys: [{ kty: 'oct', k: b64u(SECRET_32) }] });
+    expect(set.skipped[0]?.reason).toMatch(/createJWKS\(jwks, \{ algorithm: 'HS256' \}\)/);
+  });
+});
+
 describe('every failure here is a JwtError', () => {
   it('sanity', () => {
     expect(new JwtKeyError('x')).toBeInstanceOf(JwtError);

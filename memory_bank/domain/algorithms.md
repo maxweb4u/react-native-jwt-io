@@ -23,6 +23,8 @@ Target set for 2.0.0. Every row signs and verifies in pure JavaScript; the packa
 | ES256K | ECDSA secp256k1 (RFC 8812) | EC | `@noble/curves` | no (RFC 6979) |
 | EdDSA (Ed25519) | RFC 8037 | OKP | `@noble/curves` | no |
 
+RFC 9864 (2025) names Ed25519 signatures `Ed25519` and deprecates `EdDSA`. 2.0 accepts only `EdDSA`; a JWK with `alg: "Ed25519"` is listed in a key set's `skipped` with that reason. Accepting `Ed25519` is planned for 2.1 (backlog W-10).
+
 Verification never needs randomness. Signing with PS* on a host without `crypto.getRandomValues` throws a named error naming `react-native-get-random-values`.
 
 ## Refused

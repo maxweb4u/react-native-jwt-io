@@ -265,6 +265,30 @@ describe('#10 what an unverified token says reaches error messages escaped', () 
   });
 });
 
+describe('#11 a JWK of a supported type with an alg the library does not know is reported, not dropped', () => {
+  const ed = nodeKeyPair('ed25519');
+
+  it('RFC 9864 "Ed25519"', () => {
+    const set = createJWKS({ keys: [{ ...jwkOf(ed.publicKey), alg: 'Ed25519', kid: 'k1' }] });
+    expect(set.keys).toHaveLength(0);
+    expect(set.skipped).toEqual([expect.objectContaining({ index: 0, kid: 'k1', reason: expect.stringMatching(/RFC 9864/) })]);
+    const token = `${b64u('{"alg":"EdDSA","kid":"k1"}')}.${b64u('{}')}.AAAA`;
+    expect(() => verify(token, set)).toThrow(JwtKeyError);
+    expect(() => verify(token, set)).toThrow(/RFC 9864/);
+  });
+
+  it('an unknown alg on an RSA key; unsupported types are still left out silently', () => {
+    const set = createJWKS({
+      keys: [
+        { ...jwkOf(rsa.publicKey), alg: 'RS1', kid: 'r' },
+        { kty: 'OKP', crv: 'X25519', x: 'AAAA', kid: 'x' },
+        { ...jwkOf(rsa.publicKey), use: 'enc', kid: 'e' },
+      ],
+    });
+    expect(set.skipped.map((entry) => entry.kid)).toEqual(['r']);
+  });
+});
+
 describe('#13 options are checked before the token is read — every kind of them', () => {
   const token = sign({}, SECRET_32, { now: at(T), expiresIn: 60 });
   const forged = `${token.slice(0, token.lastIndexOf('.'))}.AAAA`;

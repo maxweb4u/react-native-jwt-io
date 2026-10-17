@@ -42,6 +42,12 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   works; without it — or with one that throws or returns no random bytes —
   RS* signing works unblinded as before, and PS* signing throws
   `JwtHostRequirementError`.
+- A JWK of a supported type with an `alg` this library does not know — such as
+  RFC 9864's `Ed25519` — is listed in the key set's `skipped` with the reason,
+  instead of being left out silently. A JWK with a JWE algorithm (`RSA-OAEP`,
+  `ECDH-ES`, …) is an encryption key and is left out silently, `use` or not. An
+  RSA key without `alg` (as Microsoft Entra publishes them) is reported with
+  the remedy `createJWKS(jwks, { algorithm: 'RS256' })`.
 - The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
   `noTimestamp` must be booleans; `'true'` was read as false.
 - `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload &

@@ -4,7 +4,7 @@ import { type JwkSet } from '../types/jwt';
 import { describeValue } from '../utils/describe';
 import { isPlainObject } from '../utils/json';
 import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
-import { importJWK, unsupportedReason } from './jwk';
+import { importJWK, unsupportedType } from './jwk';
 import { type JwtKey } from './JwtKey';
 
 /** Keys selected by the token's `kid`, then by `alg`. Create one with `createJWKS`. */
@@ -56,7 +56,10 @@ export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKe
     if (!isPlainObject(jwk)) {
       throw new JwtKeyError(`JWKS key #${index} is not an object.`);
     }
-    if (unsupportedReason(jwk) !== null) {
+    // Not for signatures, or a key type this library does not support: left
+    // out silently. A supported type with an alg it does not know (such as
+    // RFC 9864's "Ed25519") is reported in skipped by importJWK below.
+    if (unsupportedType(jwk) !== null) {
       return;
     }
     const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? setAlgorithm : undefined;
@@ -66,7 +69,14 @@ export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKe
       if (!(error instanceof JwtKeyError)) {
         throw error;
       }
-      skipped.push(Object.freeze({ index, ...(typeof jwk.kid === 'string' ? { kid: jwk.kid } : {}), reason: error.message }));
+      // importJWK's advice names importJWK; here the set takes the algorithm (Microsoft Entra publishes RSA keys without alg).
+      const reason =
+        algorithm === undefined && jwk.alg === undefined && /has no "alg"/.test(error.message)
+          ? `This ${jwk.kty as string} JWK has no "alg", and its type allows several algorithms. Pass one for the set: createJWKS(jwks, { algorithm: '${
+              jwk.kty === 'oct' ? 'HS256' : 'RS256'
+            }' }).`
+          : error.message;
+      skipped.push(Object.freeze({ index, ...(typeof jwk.kid === 'string' ? { kid: jwk.kid } : {}), reason }));
     }
   });
   const set: JwtKeySet = Object.freeze({ keys: Object.freeze(keys), skipped: Object.freeze(skipped) });

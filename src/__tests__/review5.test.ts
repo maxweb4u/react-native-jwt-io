@@ -251,6 +251,24 @@ describe('#7 importPEM reads what OpenSSL and Node read', () => {
   });
 });
 
+describe('#8 key sets', () => {
+  it('a JWE key without use is an encryption key, left out silently', () => {
+    const set = createJWKS({
+      keys: [
+        { ...jwkOf(rsa.publicKey), alg: 'RSA-OAEP-256', kid: 'enc' },
+        { ...jwkOf(ec.publicKey), alg: 'ECDH-ES+A128KW', kid: 'ecdh' },
+      ],
+    });
+    expect([set.keys.length, set.skipped.length]).toEqual([0, 0]);
+  });
+
+  it('an RSA key without alg (Microsoft Entra) is reported with the set\'s own remedy', () => {
+    const set = createJWKS({ keys: [{ ...jwkOf(rsa.publicKey), kid: 'e1', use: 'sig' }] });
+    expect(set.skipped[0]?.reason).toMatch(/createJWKS\(jwks, \{ algorithm: 'RS256' \}\)/);
+    expect(createJWKS({ keys: [{ ...jwkOf(rsa.publicKey), kid: 'e1' }] }, { algorithm: 'RS256' }).keys).toHaveLength(1);
+  });
+});
+
 describe('#9 types', () => {
   it('compile-time (npm run typecheck): undefined registered claims, and WebCrypto JWKs', () => {
     const token = sign({ sub: 'u' }, SECRET_32);
