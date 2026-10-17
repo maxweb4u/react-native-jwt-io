@@ -81,20 +81,20 @@ export function validateClaims(header: JwtHeader, payload: JwtPayload, rules: Cl
   }
 
   if (rules.issuers !== undefined && !rules.issuers.includes(payload.iss as string)) {
-    throw new JwtClaimError('iss', `Unexpected issuer ${JSON.stringify(payload.iss)}.`);
+    throw new JwtClaimError('iss', `Unexpected issuer ${describeValue(payload.iss)}.`);
   }
   if (rules.audiences !== undefined) {
     const expected = rules.audiences;
     const actual = typeof payload.aud === 'string' ? [payload.aud] : (payload.aud ?? []);
     if (!actual.some((aud) => expected.includes(aud))) {
-      throw new JwtClaimError('aud', `Unexpected audience ${JSON.stringify(payload.aud)}.`);
+      throw new JwtClaimError('aud', `Unexpected audience ${describeValue(payload.aud)}.`);
     }
   }
   if (rules.subject !== undefined && payload.sub !== rules.subject) {
-    throw new JwtClaimError('sub', `Unexpected subject ${JSON.stringify(payload.sub)}.`);
+    throw new JwtClaimError('sub', `Unexpected subject ${describeValue(payload.sub)}.`);
   }
   if (rules.typ !== undefined && (typeof header.typ !== 'string' || normalizeTyp(header.typ) !== normalizeTyp(rules.typ))) {
-    throw new JwtClaimError('typ', `Unexpected header "typ" ${JSON.stringify(header.typ)}.`);
+    throw new JwtClaimError('typ', `Unexpected header "typ" ${describeValue(header.typ)}.`);
   }
   for (const claim of rules.requiredClaims) {
     if (!Object.prototype.hasOwnProperty.call(payload, claim)) {

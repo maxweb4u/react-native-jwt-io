@@ -1,6 +1,7 @@
 import { JwtAlgorithmError, JwtKeyError, JwtKeyNotFoundError } from '../errors/errors';
 import { type Algorithm } from '../types/algorithm';
 import { type JwkSet } from '../types/jwt';
+import { describeValue } from '../utils/describe';
 import { isPlainObject } from '../utils/json';
 import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
 import { importJWK, unsupportedReason } from './jwk';
@@ -86,16 +87,16 @@ export function selectKey(set: JwtKeySet, kid: string | undefined, alg: Algorith
     if (sameKid.length === 0) {
       const unusable = set.skipped.find((entry) => entry.kid === kid);
       if (unusable) {
-        throw new JwtKeyError(`The key with kid "${kid}" is in the set but could not be imported: ${unusable.reason}`);
+        throw new JwtKeyError(`The key with kid ${describeValue(kid)} is in the set but could not be imported: ${unusable.reason}`);
       }
-      throw new JwtKeyNotFoundError(`No key in the set has kid "${kid}".`, kid);
+      throw new JwtKeyNotFoundError(`No key in the set has kid ${describeValue(kid)}.`, kid);
     }
     const matches = sameKid.filter((key) => key.algorithm === alg);
     if (matches.length === 0) {
-      throw new JwtAlgorithmError(`The key with kid "${kid}" is for ${sameKid.map((k) => k.algorithm).join(', ')}, but the token says ${alg}.`);
+      throw new JwtAlgorithmError(`The key with kid ${describeValue(kid)} is for ${sameKid.map((k) => k.algorithm).join(', ')}, but the token says ${alg}.`);
     }
     if (matches.length > 1) {
-      throw new JwtKeyNotFoundError(`${matches.length} keys in the set have kid "${kid}" and are for ${alg}; the choice would be a guess.`, kid);
+      throw new JwtKeyNotFoundError(`${matches.length} keys in the set have kid ${describeValue(kid)} and are for ${alg}; the choice would be a guess.`, kid);
     }
     return matches[0] as JwtKey;
   }

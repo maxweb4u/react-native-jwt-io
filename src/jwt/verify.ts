@@ -50,7 +50,7 @@ export function verify<TPayload = JwtPayload>(
     throw new JwtAlgorithmError('Unsigned tokens (alg "none") are never accepted.');
   }
   if (!isAlgorithm(alg)) {
-    throw new JwtAlgorithmError(`Unsupported algorithm "${alg}".`);
+    throw new JwtAlgorithmError(`Unsupported algorithm ${describeValue(alg)}.`);
   }
   // RFC 7515 §4.1.11: an extension we do not understand must not be ignored.
   if (header.crit !== undefined) {

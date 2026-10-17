@@ -43,6 +43,13 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
 - `createJWKS(set, { algorithm: 'RS999' })` skipped every key the option
   applied to; an unknown algorithm name is now refused.
 
+### Security
+
+- An unverified token's `alg` and `kid`, and the `iss`, `aud`, `sub` and
+  `typ` named in claim errors, are escaped and shortened in error messages —
+  U+2028, U+2029, C1 controls and bidirectional format characters included —
+  so they cannot forge or reverse lines in an app's logs.
+
 ## [2.0.0-alpha.0] — 2026-10-16
 
 A rewrite in TypeScript with a new, synchronous API. Breaking: see
