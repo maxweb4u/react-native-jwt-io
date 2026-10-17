@@ -44,6 +44,10 @@ export function parseToken(token: unknown): ParsedToken {
       throw new JwtMalformedError(`The header "${name}" must be a string.`);
     }
   }
+  const crit = header.crit;
+  if (crit !== undefined && !(Array.isArray(crit) && crit.every((name) => typeof name === 'string'))) {
+    throw new JwtMalformedError('The header "crit" must be an array of strings.');
+  }
   const payload = decodeJsonSegment(payloadPart, 'payload');
   validateRegisteredClaims(payload);
   const signature = base64UrlDecode(signaturePart);

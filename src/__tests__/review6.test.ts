@@ -168,6 +168,18 @@ describe('#5 a public key in UTF-16 is refused in either byte order', () => {
   });
 });
 
+describe('#6 decodeUnverified checks the type of crit', () => {
+  it.each(['5', '"exp"', '[1]', '{}'])('crit %s', (crit) => {
+    expect(() => decodeUnverified(hs256('{}', `{"alg":"HS256","crit":${crit}}`))).toThrow(/"crit" must be an array of strings/);
+  });
+
+  it('an array of strings is read, and refused by verify', () => {
+    const token = hs256('{}', '{"alg":"HS256","crit":["exp"]}');
+    expect(decodeUnverified(token).header.crit).toEqual(['exp']);
+    expect(() => verify(token, SECRET_32)).toThrow(/critical extensions/);
+  });
+});
+
 describe('#7 createJWKS checks its options before the set', () => {
   it('an unknown algorithm with a malformed set', () => {
     expect(() => createJWKS(null as unknown as JwkSet, { algorithm: 'RS999' as 'RS256' })).toThrow(JwtOptionError);

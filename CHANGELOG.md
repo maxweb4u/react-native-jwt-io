@@ -70,6 +70,8 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
 - `importPEM` refuses a PEM block that is not complete instead of reading the
   next one, reads a BEGIN line that ends with spaces, and says what a file of
   EC PARAMETERS alone is.
+- `decodeUnverified` checks that a header's `crit` is an array of strings;
+  `createJWKS` checks its options before the set.
 
 ### Documented
 
