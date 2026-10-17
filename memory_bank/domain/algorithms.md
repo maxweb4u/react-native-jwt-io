@@ -17,7 +17,7 @@ Target set for 2.0.0. Every row signs and verifies in pure JavaScript; the packa
 | `alg` | Family | Key | Implemented by | Needs `getRandomValues` to sign |
 |-|-|-|-|-|
 | HS256 / HS384 / HS512 | HMAC-SHA2 | secret ≥ hash length | `@noble/hashes` | no |
-| RS256 / RS384 / RS512 | RSASSA-PKCS1-v1_5 | RSA ≥ 2048 bits | `micro-rsa-dsa-dh` | no |
+| RS256 / RS384 / RS512 | RSASSA-PKCS1-v1_5 | RSA ≥ 2048 bits | `micro-rsa-dsa-dh` | no; used for blinding when present ([keys.md](keys.md#rsa-blinding)) |
 | PS256 / PS384 / PS512 | RSASSA-PSS, salt = hash length | RSA ≥ 2048 bits | `micro-rsa-dsa-dh` | **yes** |
 | ES256 / ES384 / ES512 | ECDSA P-256 / P-384 / P-521 | EC | `@noble/curves` | no (RFC 6979) |
 | ES256K | ECDSA secp256k1 (RFC 8812) | EC | `@noble/curves` | no (RFC 6979) |

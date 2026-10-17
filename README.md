@@ -45,9 +45,11 @@ Requirements:
 - Signing with **PS256/384/512** needs `crypto.getRandomValues`, which Hermes
   lacks. Install [`react-native-get-random-values`](https://github.com/LinusU/react-native-get-random-values)
   (2.x needs React Native 0.81 or later; use 1.11 below that) and import it
-  once, first in your entry file — before this library, which checks for it
-  when it loads. Nothing else needs it; without it, PS* signing throws
-  `JwtHostRequirementError` naming the package.
+  once, first in your entry file, before this library: the crypto code decides
+  when it loads whether it can blind its computations. PS* signing checks for
+  it when called and, without it, throws `JwtHostRequirementError` naming the
+  package. Nothing else needs it; with it, RS* signing is blinded against
+  timing attacks too.
 - **Expo:** works in **Expo Go** and in development builds — there is no native
   code, so no config plugin and no prebuild. Install with
   `npx expo install react-native-jwt-io@next`, and for PS* signing
@@ -250,7 +252,7 @@ Measured on a mid-range Android phone (Realme RMX3363, 2021), Release build:
 | | verify | sign |
 |-|-|-|
 | HS256 | 0.9 ms | 0.8 ms |
-| RS256 / PS256 | 7.5 ms | 0.9 s (RS) |
+| RS256 / PS256 | 7.5 ms | 0.9–1 s |
 | ES256 | 60 ms | 14 ms |
 | EdDSA | 30 ms | 9 ms |
 

@@ -20,7 +20,7 @@ canonical_for:
 
 ## Hermes / React Native
 
-- **No WebCrypto.** `globalThis.crypto.subtle` is undefined; `crypto.getRandomValues` too, unless the host installs `react-native-get-random-values`. Signing with HMAC, ECDSA, Ed25519, and RSA PKCS#1 v1.5 needs no randomness; RSA-PSS signing (random salt) and key generation do. noble 2.x ECDSA is deterministic only because `extraEntropy` defaults to `false` — passing `true` would make every ES* signature need the RNG.
+- **No WebCrypto.** `globalThis.crypto.subtle` is undefined; `crypto.getRandomValues` too, unless the host installs `react-native-get-random-values`. Signing with HMAC, ECDSA, Ed25519, and RSA PKCS#1 v1.5 needs no randomness; RSA-PSS signing (random salt) and key generation do. RSA signing of either kind uses it for blinding when it is there ([../domain/keys.md](../domain/keys.md#rsa-blinding)). noble 2.x ECDSA is deterministic only because `extraEntropy` defaults to `false` — passing `true` would make every ES* signature need the RNG.
 - **`atob`/`btoa` exist only from React Native 0.74**, and work on Latin-1 strings. The library carries its own base64url over bytes.
 - **`TextEncoder` exists in Hermes only from React Native 0.74** (Hermes' sources: `lib/VM/JSLib/TextEncoder.cpp` is absent at the 0.71, 0.72 and 0.73 tags, present at 0.74). `TextDecoder` is absent even in 0.87. The library's own code uses neither; noble needs `TextEncoder` at load — see the next point.
 - **What Hermes in React Native 0.87.1 has**, measured on 2026-10-15 in a Release build on an iOS 18.3 simulator: `BigInt`, `Object.hasOwn`, `TextEncoder`, `atob` — yes; `TextDecoder`, `crypto.getRandomValues` — no. Older versions are what FT-001 stage 1a measures.

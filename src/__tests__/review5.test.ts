@@ -10,6 +10,7 @@ import {
   decodeUnverified,
   importJWK,
   importPEM,
+  JwtHostRequirementError,
   sign,
   verify,
 } from '../index';
@@ -23,6 +24,36 @@ const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
 
 const rsa = nodeKeyPair('rsa');
 const ec = nodeKeyPair('P-256');
+
+/** Runs `body` with globalThis.crypto replaced, and puts the real one back. */
+function withCrypto(replacement: unknown, body: () => void): void {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'crypto') as PropertyDescriptor;
+  Object.defineProperty(globalThis, 'crypto', { value: replacement, configurable: true, writable: true });
+  try {
+    body();
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', saved);
+  }
+}
+
+describe('#1 a broken getRandomValues never hangs signing or blames the key', () => {
+  const rs = importPEM(pem(rsa.privateKey), 'RS256');
+  const ps = importPEM(pem(rsa.privateKey), 'PS256');
+  const rsPublic = importPEM(pem(rsa.publicKey), 'RS256');
+
+  it.each<[string, unknown]>([
+    ['one that returns its argument untouched (a test mock)', { getRandomValues: (array: Uint8Array) => array }],
+    ['one that fills a constant', { getRandomValues: (array: Uint8Array) => array.fill(7) }],
+    ['one that throws (react-native-get-random-values without its native module)', { getRandomValues: () => { throw new Error('Native module not found'); } }],
+    ['one that is not a function', { getRandomValues: 5 }],
+  ])('%s: RS256 signs unblinded, PS256 names the host', (_name, replacement) => {
+    withCrypto(replacement, () => {
+      expect(verify(sign({ a: 1 }, rs), rsPublic).payload.a).toBe(1);
+      expect(() => sign({}, ps)).toThrow(JwtHostRequirementError);
+      expect(() => sign({}, ps)).toThrow(/crypto\.getRandomValues/);
+    });
+  });
+});
 
 describe('#2 options.header is checked with the other options', () => {
   it.each([

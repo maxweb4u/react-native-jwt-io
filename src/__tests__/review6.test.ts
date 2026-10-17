@@ -10,9 +10,11 @@ import {
   decodeUnverified,
   getExpiration,
   importJWK,
+  importPEM,
   isExpired,
   JwtClaimError,
   JwtError,
+  JwtHostRequirementError,
   JwtKeyError,
   JwtMalformedError,
   JwtOptionError,
@@ -20,7 +22,7 @@ import {
   verify,
 } from '../index';
 import { type Jwk, type JwkSet } from '../types/jwt';
-import { b64u, nodeKeyPair, SECRET_32 } from './helpers/node';
+import { b64u, nodeKeyPair, pem, SECRET_32 } from './helpers/node';
 
 const rsa = nodeKeyPair('rsa');
 const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
@@ -30,6 +32,17 @@ function hs256(payload: string, header = '{"alg":"HS256","typ":"JWT"}'): string 
   const input = `${b64u(header)}.${b64u(payload)}`;
   return `${input}.${b64u(crypto.createHmac('sha256', SECRET_32).update(input).digest())}`;
 }
+
+function withCrypto(descriptor: PropertyDescriptor, body: () => void): void {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'crypto') as PropertyDescriptor;
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, ...descriptor });
+  try {
+    body();
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', saved);
+  }
+}
+const source = (getRandomValues: (array: Uint8Array) => unknown) => ({ value: { getRandomValues }, writable: true });
 
 const nested = (depth: number): unknown => JSON.parse(`${'['.repeat(depth)}${']'.repeat(depth)}`);
 
@@ -179,6 +192,131 @@ describe('#9 an own __proto__ key in a payload to sign is dropped, whatever the 
     expect(json).not.toContain('admin');
     expect(JSON.parse(json)).toEqual({ sub: 'x', iat: 1_700_000_000 });
     expect(() => sign(payload, SECRET_32, { issuer: 'good' })).not.toThrow();
+  });
+});
+
+describe('#12 a broken random source never hangs RSA signing or blames the key', () => {
+  const rs = importPEM(pem(rsa.privateKey), 'RS256');
+  const ps = importPEM(pem(rsa.privateKey), 'PS256');
+  const rsPublic = importPEM(pem(rsa.publicKey), 'RS256');
+  const psPublic = importPEM(pem(rsa.publicKey), 'PS256');
+
+  it('one that fills the array but returns nothing (a common jest setup)', () => {
+    withCrypto(
+      source((array) => {
+        crypto.randomFillSync(array);
+      }),
+      () => {
+        expect(verify(sign({}, rs), rsPublic).header.alg).toBe('RS256');
+        expect(() => sign({}, ps)).toThrow(JwtHostRequirementError);
+      },
+    );
+  });
+
+  it('one that returns a plain array', () => {
+    withCrypto(
+      source((array) => Array.from(crypto.randomFillSync(array))),
+      () => {
+        expect(verify(sign({}, rs), rsPublic).header.alg).toBe('RS256');
+        expect(() => sign({}, ps)).toThrow(JwtHostRequirementError);
+      },
+    );
+  });
+
+  it('one whose numbers never fall below the modulus (blinding would loop forever)', () => {
+    let counter = 0;
+    withCrypto(
+      source((array) => {
+        array.fill(0xff);
+        array[array.length - 1] = counter++ & 0xff;
+        return array;
+      }),
+      () => {
+        expect(verify(sign({}, rs), rsPublic).header.alg).toBe('RS256');
+        expect(verify(sign({}, ps), psPublic).header.alg).toBe('PS256');
+      },
+    );
+  });
+
+  it('one that fills only the first array', () => {
+    let first = true;
+    withCrypto(
+      source((array) => {
+        if (first) {
+          crypto.randomFillSync(array);
+          first = false;
+        }
+        return array;
+      }),
+      () => {
+        expect(verify(sign({}, rs), rsPublic).header.alg).toBe('RS256');
+      },
+    );
+  });
+
+  it('one with a quota below a modulus', () => {
+    withCrypto(
+      source((array) => {
+        if (array.length > 64) {
+          throw new Error('quota');
+        }
+        return crypto.randomFillSync(array);
+      }),
+      () => {
+        expect(verify(sign({}, rs), rsPublic).header.alg).toBe('RS256');
+        expect(verify(sign({}, ps), psPublic).header.alg).toBe('PS256');
+      },
+    );
+  });
+
+  it.each<[string, PropertyDescriptor]>([
+    [
+      'a crypto getter that throws',
+      {
+        get() {
+          throw new Error('getter boom');
+        },
+      },
+    ],
+    [
+      'a getRandomValues getter that throws',
+      {
+        value: Object.defineProperty({}, 'getRandomValues', {
+          get() {
+            throw new Error('getter boom');
+          },
+        }),
+      },
+    ],
+  ])('%s', (_, descriptor) => {
+    withCrypto(descriptor, () => {
+      expect(verify(sign({}, rs), rsPublic).header.alg).toBe('RS256');
+      expect(() => sign({}, ps)).toThrow(JwtHostRequirementError);
+    });
+  });
+
+  it('PS256 without any getRandomValues names the engine, not a broken polyfill', () => {
+    withCrypto({ value: undefined, writable: true }, () => {
+      expect(() => sign({}, ps)).toThrow(/which this JavaScript engine does not provide/);
+    });
+    withCrypto(source((array) => array), () => {
+      expect(() => sign({}, ps)).toThrow(/does not produce random bytes/);
+    });
+  });
+
+  it('a working source still blinds: it draws a modulus-sized number', () => {
+    const lengths: number[] = [];
+    const real = globalThis.crypto;
+    withCrypto(
+      source((array) => {
+        lengths.push(array.length);
+        return real.getRandomValues(array);
+      }),
+      () => {
+        sign({}, rs);
+      },
+    );
+    expect(lengths.filter((length) => length === 256).length).toBeGreaterThanOrEqual(2);
   });
 });
 

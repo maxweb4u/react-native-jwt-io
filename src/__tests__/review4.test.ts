@@ -136,6 +136,52 @@ describe('#7 the payload type cannot contradict the registered claims', () => {
   });
 });
 
+describe('#9 RSA signing is blinded when a random source exists', () => {
+  const key = importPEM(pem(rsa.privateKey), 'RS256');
+
+  it('draws random numbers for RS256 when crypto.getRandomValues is there', () => {
+    const spy = jest.spyOn(globalThis.crypto, 'getRandomValues');
+    try {
+      const token = sign({ a: 1 }, key);
+      expect(spy).toHaveBeenCalled();
+      expect(verify(token, importPEM(pem(rsa.publicKey), 'RS256')).payload.a).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('still signs RS256, unblinded and identically, without one', () => {
+    const blinded = sign({ a: 1 }, key, { now: at(T) });
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'crypto') as PropertyDescriptor;
+    Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true, writable: true });
+    try {
+      // PKCS#1 v1.5 is deterministic: blinding changes the computation, not the signature.
+      expect(sign({ a: 1 }, key, { now: at(T) })).toBe(blinded);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', saved);
+    }
+  });
+
+  it('reports a private key that does not match its public key either way', () => {
+    const other = nodeKeyPair('rsa1024');
+    const mixed = { ...jwkOf(rsa.privateKey), d: (jwkOf(other.privateKey).d as string) };
+    delete (mixed as Record<string, unknown>).p;
+    delete (mixed as Record<string, unknown>).q;
+    delete (mixed as Record<string, unknown>).dp;
+    delete (mixed as Record<string, unknown>).dq;
+    delete (mixed as Record<string, unknown>).qi;
+    const bad = importJWK(mixed, 'RS256');
+    expect(() => sign({}, bad)).toThrow(/does not match its public key/);
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'crypto') as PropertyDescriptor;
+    Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true, writable: true });
+    try {
+      expect(() => sign({}, bad)).toThrow(/does not match its public key/);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', saved);
+    }
+  });
+});
+
 describe('#10 what an unverified token says reaches error messages escaped', () => {
   const injected = 'x"\n2026-10-17T00:00:00Z INFO login ok user=admin\u001b[2J';
   const messageOf = (call: () => unknown): string => {

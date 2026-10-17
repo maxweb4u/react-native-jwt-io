@@ -35,6 +35,10 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   it is an error.
 - A future `iat` is refused only when `maxTokenAge` is given, as in `jose`: a
   device clock a few seconds behind the issuer's refused every fresh token.
+- RSA signing is blinded against timing attacks when `crypto.getRandomValues`
+  works; without it — or with one that throws or returns no random bytes —
+  RS* signing works unblinded as before, and PS* signing throws
+  `JwtHostRequirementError`.
 - The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
   `noTimestamp` must be booleans; `'true'` was read as false.
 - `verify<T>` and `decodeUnverified<T>` return `payload: JwtPayload &
@@ -69,6 +73,10 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   "not valid JSON".
 - With React Native's Babel preset, an own `__proto__` key in a payload to
   sign became the copy's prototype; it is dropped, as everywhere else.
+- RSA signing with a `getRandomValues` that returns nothing, or with a
+  throwing `crypto` getter, failed blaming the key; one whose numbers never
+  fall below the modulus, or that fills one array only, hung blinding. The
+  random source is now probed the way blinding draws from it.
 - `requiredClaims: null` switched the check off; it is now an error.
 - `sign({ aud: null }, key, { audience })` blamed the option, not the payload.
 
