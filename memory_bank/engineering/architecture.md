@@ -72,4 +72,4 @@ Everything exported from `src/index.ts` is a published contract. Adding to it is
 | Bundlers | `lib/module` | the `import` condition |
 | TypeScript | `lib/typescript` | `types` |
 
-`sideEffects` lists only `host/hostCheck`, so a tree-shaking bundler keeps the engine check.
+`sideEffects` lists `host/hostCheck` and the entry points (`src/index.ts`, `lib/*/index.js`). The entry points too: webpack 5 and Rollup treat a barrel module that is not listed as removable for its re-exports, and drop its `import './host/hostCheck'` with it — measured on 2026-10-17; esbuild kept it either way.

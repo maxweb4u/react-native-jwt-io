@@ -26,7 +26,9 @@
     "!**/*.test.ts"
   ],
   "sideEffects": [
+    "./src/index.ts",
     "./src/host/hostCheck.ts",
+    "./lib/*/index.js",
     "./lib/*/host/hostCheck.js"
   ],
   "engines": {

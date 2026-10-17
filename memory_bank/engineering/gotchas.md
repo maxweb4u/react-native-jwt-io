@@ -40,6 +40,7 @@ canonical_for:
 
 - **Expo Go keeps a production bundle by URL.** With `expo start --no-dev --minify`, reopening the same `exp://host:port` in Expo Go showed the previous bundle even after `--clear` — Metro logged no new "Bundled" line — and `CI=1` turns reloads off as well. Mark each variant visibly (a title) and use a new port, or run in development mode, which Expo Go does not keep. On the Realme RMX3363, `pm clear host.exp.exponent` over adb is refused. Seen on 2026-10-16 with Expo Go 58.0.4.
 
+- **A barrel's side-effect import dies with the barrel.** With `sideEffects` naming only `host/hostCheck`, webpack 5 (production) and Rollup skipped `index.js` for its re-exports and the host check never ran: a missing `Object.hasOwn` surfaced as a raw TypeError. Listing the entry points in `sideEffects` fixed both; esbuild kept the check either way. Found by the consumer-side review of 2026-10-17.
 - **react-native-get-random-values in Expo Go uses `expo-crypto`.** Expo provides no `crypto.getRandomValues` (measured: without a polyfill PS* fails in Expo Go), and the package is not in `expo/bundledNativeModules.json`; it works because its 2.x falls back to `global.expo.modules.ExpoCrypto` when its own native module is absent.
 
 ## Toolchain
