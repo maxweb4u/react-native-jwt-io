@@ -24,22 +24,28 @@ export interface ClaimRules {
  * reaches the claim checks — otherwise an expired or forged token would hide it.
  */
 export function claimRules(options: VerifyOptions): ClaimRules {
-  const maxAge = durationOption(options.maxTokenAge, 'maxTokenAge');
-  if (options.subject !== undefined && typeof options.subject !== 'string') {
+  // Each option read once: a getter must not answer one value to the check and another to the use.
+  const { maxTokenAge, subject, typ, issuer, audience, requiredClaims } = options;
+  const maxAge = durationOption(maxTokenAge, 'maxTokenAge');
+  if (maxAge === 0) {
+    throw new JwtOptionError('maxTokenAge', '"maxTokenAge" is 0 seconds: every token would be too old. Give a positive duration.');
+  }
+  if (subject !== undefined && typeof subject !== 'string') {
     throw new JwtOptionError('subject', 'The "subject" option must be a string.');
   }
-  if (options.typ !== undefined && typeof options.typ !== 'string') {
+  if (typ !== undefined && typeof typ !== 'string') {
     throw new JwtOptionError('typ', 'The "typ" option must be a string.');
   }
   return {
     now: currentSeconds(options.now),
     tolerance: clockToleranceOption(options.clockTolerance),
-    maxTokenAge: maxAge === undefined ? undefined : { seconds: maxAge, label: options.maxTokenAge as Duration },
-    issuers: options.issuer === undefined ? undefined : stringList(options.issuer, 'issuer'),
-    audiences: options.audience === undefined ? undefined : stringList(options.audience, 'audience'),
-    subject: options.subject,
-    typ: options.typ,
-    requiredClaims: stringList(options.requiredClaims ?? [], 'requiredClaims'),
+    maxTokenAge: maxAge === undefined ? undefined : { seconds: maxAge, label: maxTokenAge as Duration },
+    // Not empty: an empty list would refuse every token, as if the token were at fault.
+    issuers: issuer === undefined ? undefined : stringList(issuer, 'issuer', { nonEmpty: true }),
+    audiences: audience === undefined ? undefined : stringList(audience, 'audience', { nonEmpty: true }),
+    subject,
+    typ,
+    requiredClaims: requiredClaims === undefined ? [] : stringList(requiredClaims, 'requiredClaims'),
     ignoreExpiration: booleanOption(options.ignoreExpiration, 'ignoreExpiration'),
     ignoreNotBefore: booleanOption(options.ignoreNotBefore, 'ignoreNotBefore'),
   };
@@ -201,11 +207,14 @@ export function durationOption(value: Duration | undefined, name: string): numbe
 }
 
 /** An option that is a string or an array of strings, as an array; anything else is a caller error. */
-export function stringList(value: unknown, name: string): readonly string[] {
+export function stringList(value: unknown, name: string, { nonEmpty = false } = {}): readonly string[] {
   if (typeof value === 'string') {
     return [value];
   }
   if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    if (nonEmpty && value.length === 0) {
+      throw new JwtOptionError(name, `"${name}" is an empty list, which no token could match. Leave it out, or name at least one.`);
+    }
     return value as string[];
   }
   throw new JwtOptionError(name, `"${name}" must be a string or an array of strings.`);

@@ -41,13 +41,15 @@ const keySets = new WeakSet<object>();
  * planned for 2.1 (memory_bank/product/roadmap.md).
  */
 export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKeySet {
-  if (!isPlainObject(jwks) || !Array.isArray(jwks.keys)) {
-    throw new JwtKeyError('createJWKS expects a JWKS object: { keys: [...] }.');
-  }
+  // Options first, as everywhere (ADR-008).
   const opts: CreateJwksOptions = options ?? {};
   assertKnownOptions(opts, ['algorithm']);
   // Checked here: inside the loop an unknown name would only skip every key it applies to.
-  assertAlgorithmOption(opts.algorithm);
+  const setAlgorithm = opts.algorithm;
+  assertAlgorithmOption(setAlgorithm);
+  if (!isPlainObject(jwks) || !Array.isArray(jwks.keys)) {
+    throw new JwtKeyError('createJWKS expects a JWKS object: { keys: [...] }.');
+  }
   const keys: JwtKey[] = [];
   const skipped: SkippedJwk[] = [];
   jwks.keys.forEach((jwk, index) => {
@@ -57,7 +59,7 @@ export function createJWKS(jwks: JwkSet, options: CreateJwksOptions = {}): JwtKe
     if (unsupportedReason(jwk) !== null) {
       return;
     }
-    const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? opts.algorithm : undefined;
+    const algorithm = jwk.alg === undefined && (jwk.kty === 'RSA' || jwk.kty === 'oct') ? setAlgorithm : undefined;
     try {
       keys.push(importJWK(jwk, algorithm));
     } catch (error) {

@@ -40,7 +40,9 @@ export function verify<TPayload = JwtPayload>(
 ): DecodedJwt<TPayload> {
   const opts: VerifyOptions = options ?? {};
   assertKnownOptions(opts, VERIFY_OPTIONS);
-  assertAlgorithmOption(opts.algorithm);
+  // Read once: a getter must not answer one value to the check and another to the use.
+  const algorithm = opts.algorithm;
+  assertAlgorithmOption(algorithm);
   const allowShortSecret = booleanOption(opts.allowShortSecret, 'allowShortSecret');
   const rules = claimRules(opts);
   const { header, payload, signingInput, signature } = parseToken(token);
@@ -62,11 +64,11 @@ export function verify<TPayload = JwtPayload>(
 
   // `algorithm` pins the token's alg, for a key set as for a single key —
   // checked before the set is searched, so the error names the real cause.
-  if (opts.algorithm !== undefined && opts.algorithm !== alg) {
-    throw new JwtAlgorithmError(`The token is signed with ${alg}, but options.algorithm is ${describeValue(opts.algorithm)}.`);
+  if (algorithm !== undefined && algorithm !== alg) {
+    throw new JwtAlgorithmError(`The token is signed with ${alg}, but options.algorithm is ${describeValue(algorithm)}.`);
   }
   const chosen = isJwtKeySet(key) ? selectKey(key, header.kid, alg) : key;
-  const resolved = resolveKey(chosen, opts.algorithm);
+  const resolved = resolveKey(chosen, algorithm);
   if (resolved.algorithm !== alg) {
     throw new JwtAlgorithmError(`The token is signed with ${alg}, but the key is for ${resolved.algorithm}.`);
   }

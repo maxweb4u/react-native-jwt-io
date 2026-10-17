@@ -6,15 +6,112 @@
 import type crypto from 'node:crypto';
 import {
   createJWKS,
+  importJWK,
+  importPEM,
   JwtAlgorithmError,
+  JwtClaimError,
+  JwtKeyError,
+  sign,
   verify,
 } from '../index';
 import { type Jwk } from '../types/jwt';
-import { b64u, nodeKeyPair, SECRET_32 } from './helpers/node';
+import { b64u, nodeKeyPair, pem, SECRET_32 } from './helpers/node';
 
+const option = (name: string) => expect.objectContaining({ code: 'ERR_JWT_OPTION_INVALID', option: name });
+const T = 1_700_000_000;
+const at = (seconds: number) => new Date(seconds * 1000);
 const jwkOf = (key: crypto.KeyObject) => key.export({ format: 'jwk' }) as Jwk;
 
+const rsa = nodeKeyPair('rsa');
 const ec = nodeKeyPair('P-256');
+
+describe('#1 an option out of range in sign is the option\'s fault', () => {
+  it.each([
+    ['expiresIn', { expiresIn: 1e11 - 1000 }],
+    ['notBefore', { notBefore: 1e11 - 1000 }],
+    ['now', { now: new Date(2e14) }],
+  ])('%s', (name, options) => {
+    expect(() => sign({}, SECRET_32, options)).toThrow(option(name));
+  });
+
+  it('a millisecond iat in the payload is the payload\'s fault, and named first', () => {
+    expect(() => sign({ iat: Date.now() }, SECRET_32, { expiresIn: 5 })).toThrow(expect.objectContaining({ claim: 'iat' }));
+  });
+});
+
+describe('#2 requiredClaims must be a string or a list of strings', () => {
+  const token = sign({ sub: 'u' }, SECRET_32, { now: at(T), expiresIn: 60 });
+
+  it.each([null, 5, {}, [5]])('refuses %p, which would otherwise switch the check off', (requiredClaims) => {
+    expect(() => verify(token, SECRET_32, { now: at(T), requiredClaims: requiredClaims as never })).toThrow(option('requiredClaims'));
+  });
+
+  it('takes one name as a string, and an empty list as no requirement', () => {
+    expect(verify(token, SECRET_32, { now: at(T), requiredClaims: 'sub' as never }).payload.sub).toBe('u');
+    expect(() => verify(token, SECRET_32, { now: at(T), requiredClaims: 'jti' as never })).toThrow(JwtClaimError);
+    expect(verify(token, SECRET_32, { now: at(T), requiredClaims: [] }).payload.sub).toBe('u');
+  });
+});
+
+describe('#3 an option that no token could satisfy is the option\'s fault', () => {
+  const token = sign({ iss: 'i', aud: 'a' }, SECRET_32, { now: at(T), expiresIn: 60 });
+
+  it.each([
+    ['issuer', { issuer: [] }],
+    ['audience', { audience: [] }],
+    ['maxTokenAge', { maxTokenAge: 0 }],
+    ['maxTokenAge', { maxTokenAge: '0.5s' }],
+  ])('verify: %s %j', (name, options) => {
+    expect(() => verify(token, SECRET_32, { now: at(T), ...options })).toThrow(option(name));
+  });
+
+  it('sign: an empty audience list, which verify could never accept', () => {
+    expect(() => sign({}, SECRET_32, { audience: [] })).toThrow(option('audience'));
+  });
+});
+
+describe('#4 sign checks its options before the payload and the key', () => {
+  it.each([
+    ['a payload that is not an object', () => sign('x' as never, SECRET_32, { expiresIn: 'bogus' }), 'expiresIn'],
+    ['a short secret', () => sign({}, 'short', { expiresIn: 'bogus' }), 'expiresIn'],
+    ['an object that is not a key', () => sign({}, {} as never, { header: { alg: 'x' } }), 'header.alg'],
+    ['a public key', () => sign({}, importPEM(pem(rsa.publicKey), 'RS256'), { keyId: 5 as never }), 'keyId'],
+  ])('%s', (_name, call, name) => {
+    expect(call).toThrow(option(name));
+  });
+});
+
+describe('#5 a bad registered claim in the payload is the payload\'s fault', () => {
+  it('aud: null with an audience option', () => {
+    expect(() => sign({ aud: null }, SECRET_32, { audience: 'y' })).toThrow(expect.objectContaining({ code: 'ERR_JWT_CLAIM_INVALID', claim: 'aud' }));
+  });
+
+  it('a claim set in both places still names the option', () => {
+    expect(() => sign({ exp: T }, SECRET_32, { expiresIn: 60 })).toThrow(option('expiresIn'));
+    expect(() => sign({ iss: 'a' }, SECRET_32, { issuer: 'b' })).toThrow(option('issuer'));
+  });
+});
+
+describe('#6 an algorithm that names nothing is a mistake in the call, in every function', () => {
+  it.each([
+    ['importPEM', () => importPEM(pem(rsa.publicKey), 'RS999' as never)],
+    ['importPEM, before the PEM is looked at', () => importPEM(5 as never, 'RS999' as never)],
+    ['importPEM without one', () => importPEM(pem(rsa.publicKey), undefined as never)],
+    ['importJWK', () => importJWK(jwkOf(rsa.publicKey), 'RS999' as never)],
+    ['importJWK, before the JWK is looked at', () => importJWK(5 as never, 'RS999' as never)],
+    ['createJWKS', () => createJWKS({ keys: [] }, { algorithm: 'RS999' as never })],
+    ['sign', () => sign({}, SECRET_32, { algorithm: 'RS999' as never })],
+    ['verify', () => verify(sign({}, SECRET_32), SECRET_32, { algorithm: 'RS999' as never })],
+  ])('%s', (_name, call) => {
+    expect(call).toThrow(option('algorithm'));
+  });
+
+  it('a real algorithm that does not fit stays an algorithm or key error', () => {
+    expect(() => importPEM(pem(rsa.publicKey), 'HS256')).toThrow(JwtKeyError);
+    expect(() => importJWK({ ...jwkOf(rsa.publicKey), alg: 'RS256' }, 'RS384')).toThrow(JwtKeyError);
+    expect(() => verify(sign({}, SECRET_32), SECRET_32, { algorithm: 'HS512' })).toThrow(JwtAlgorithmError);
+  });
+});
 
 describe('#10 what an unverified token says reaches error messages escaped', () => {
   const injected = 'x"\n2026-10-17T00:00:00Z INFO login ok user=admin\u001b[2J';
@@ -43,3 +140,28 @@ describe('#10 what an unverified token says reaches error messages escaped', () 
   });
 });
 
+describe('#13 options are checked before the token is read — every kind of them', () => {
+  const token = sign({}, SECRET_32, { now: at(T), expiresIn: 60 });
+  const forged = `${token.slice(0, token.lastIndexOf('.'))}.AAAA`;
+
+  it.each<[string, object]>([
+    ['algorithm', { algorithm: 'none' }],
+    ['allowShortSecret', { allowShortSecret: 'yes' }],
+    ['ignoreExpiration', { ignoreExpiration: 1 }],
+    ['ignoreNotBefore', { ignoreNotBefore: 'true' }],
+    ['maxTokenAge', { maxTokenAge: 'soon' }],
+    ['typ', { typ: 5 }],
+    ['requiredClaims', { requiredClaims: 5 }],
+    ['now', { now: 'today' }],
+  ])('%s', (name, options) => {
+    for (const bad of [forged, 'not a token']) {
+      expect(() => verify(bad, SECRET_32, options as never)).toThrow(option(name));
+    }
+  });
+
+  it('names an inherited option, and a header that does not serialize', () => {
+    const inherited = Object.create(Object.create(null, { maxAge: { value: 1, enumerable: true } })) as object;
+    expect(() => verify(token, SECRET_32, inherited)).toThrow(option('maxAge'));
+    expect(() => sign({}, SECRET_32, { header: { x: BigInt(1) } })).toThrow(option('header'));
+  });
+});

@@ -19,10 +19,19 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
 ### Changed
 
 - Option mistakes that were `JwtClaimError` (from `sign`, `verify`,
-  `isExpired`) or `JwtKeyError` (from `importPEM`, `createJWKS`) are
-  `JwtOptionError`. Problems in the token or the payload stay `JwtClaimError`.
+  `isExpired`) or `JwtKeyError` (from `importPEM`, `importJWK`, `createJWKS`)
+  are `JwtOptionError` — an unknown `algorithm` argument to `importPEM` and
+  `importJWK` too, and an unknown `options.algorithm` in `sign` and `verify`,
+  which was a `JwtAlgorithmError`. Problems in the token or the payload stay
+  `JwtClaimError`.
 - `verify` and `isExpired` check all their options before reading the token,
-  so a bad token no longer hides a mistake in them.
+  and `sign` before the payload and the key, so neither hides a mistake in
+  them, `options.header` included. An option no token could satisfy —
+  `issuer: []`, `audience: []`, `maxTokenAge: 0`, an `expiresIn` under a
+  second — and an `expiresIn`, `notBefore` or `now` past any plausible date are
+  `JwtOptionError`.
+- A `kid` in `options.header` beats the key's own; with a different `keyId`
+  it is an error.
 - A future `iat` is refused only when `maxTokenAge` is given, as in `jose`: a
   device clock a few seconds behind the issuer's refused every fresh token.
 - The switches `ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret` and
@@ -52,6 +61,8 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   "not valid JSON".
 - With React Native's Babel preset, an own `__proto__` key in a payload to
   sign became the copy's prototype; it is dropped, as everywhere else.
+- `requiredClaims: null` switched the check off; it is now an error.
+- `sign({ aud: null }, key, { audience })` blamed the option, not the payload.
 
 ### Security
 

@@ -5,7 +5,7 @@ import {
   isValidEd25519PublicKey,
   normalizeEcPublicKey,
 } from '../crypto/curves';
-import { JwtKeyError } from '../errors/errors';
+import { JwtKeyError, JwtOptionError } from '../errors/errors';
 import { type Algorithm, isAlgorithm } from '../types/algorithm';
 import { type Jwk } from '../types/jwt';
 import { base64UrlDecode } from '../utils/base64';
@@ -62,15 +62,16 @@ export function unsupportedReason(jwk: Jwk): string | null {
  * need one of the first two. See memory_bank/domain/keys.md#binding.
  */
 export function importJWK(jwk: Jwk, algorithm?: Algorithm): JwtKey {
+  // The algorithm argument first: naming no algorithm is a mistake in the call, whatever the JWK.
+  if (algorithm !== undefined && !isAlgorithm(algorithm)) {
+    throw new JwtOptionError('algorithm', `Unsupported algorithm ${describeValue(algorithm)}.`);
+  }
   if (!isPlainObject(jwk)) {
     throw new JwtKeyError('importJWK expects a JWK object.');
   }
   const reason = unsupportedReason(jwk);
   if (reason !== null) {
     throw new JwtKeyError(`This JWK cannot be used for JWS signatures (${reason}).`);
-  }
-  if (algorithm !== undefined && !isAlgorithm(algorithm)) {
-    throw new JwtKeyError(`Unsupported algorithm ${describeValue(algorithm)}.`);
   }
   if (jwk.alg !== undefined && algorithm !== undefined && jwk.alg !== algorithm) {
     throw new JwtKeyError(`The JWK is for ${jwk.alg}, not ${algorithm}. A key is bound to exactly one algorithm.`);

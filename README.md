@@ -178,7 +178,8 @@ typed. Only the registered claims (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`,
 Options are a plain object. An unknown option name is an error, not ignored: a
 misspelled `expiresin`, or jsonwebtoken's `maxAge`, would otherwise switch
 nothing on. So is a callback in place of options — nothing here takes one —
-and a switch such as `ignoreExpiration` that is not `true` or `false`.
+a switch such as `ignoreExpiration` that is not `true` or `false`, and an option
+no token could satisfy, such as `audience: []`.
 
 A token's `aud` is checked only when you pass `audience`. If your app accepts
 tokens from an issuer that serves several audiences, pass it.

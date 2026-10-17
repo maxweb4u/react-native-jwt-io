@@ -44,7 +44,7 @@ export class JwtMalformedError extends JwtError {
   }
 }
 
-/** `alg` is missing, `none`, unsupported, or differs from the key's single algorithm. */
+/** `alg` is `none`, unsupported, or differs from the key's single algorithm or `options.algorithm`. A missing `alg` is a `JwtMalformedError`. */
 export class JwtAlgorithmError extends JwtError {
   constructor(message: string) {
     super(JwtErrorCode.Algorithm, message);

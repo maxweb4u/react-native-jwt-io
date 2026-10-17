@@ -55,7 +55,7 @@ The token's header never chooses the algorithm; the key does. Every key has exac
 
 Claim checks run only when the option is given — except `exp` and `nbf`, which run whenever the claim is present. In particular a token's `aud` is ignored without `audience`; RFC 7519 §4.1.3 asks a recipient to reject an `aud` it is not in, and only the caller knows which audience it is, so the README tells callers to pass it.
 
-An option of the wrong type (`issuer: 5`, `subject: ['u']`) is a `JwtOptionError` naming the option, not a mismatch.
+An option of the wrong type (`issuer: 5`, `subject: ['u']`) is a `JwtOptionError` naming the option, not a mismatch. So is an option no token could satisfy: an empty `issuer` or `audience` list, `maxTokenAge` of 0 — they would refuse every token as if the token were at fault. `requiredClaims` takes a name or a list of names; `null` or a number is an error, not "no requirement".
 
 ## Options
 
@@ -63,6 +63,8 @@ Options must be a **plain object** (`{…}`, or one with a null prototype): a fu
 
 `null` in place of options means none, as `undefined` does.
 
-What else is a `JwtOptionError` ([ADR-008](../adr/ADR-008-option-errors.md)): a value of the wrong type or out of range (durations, `clockTolerance`, `now`, the string options, `requiredClaims`); a switch (`ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret`, `noTimestamp`) that is not a boolean — `'true'` read as false would hide the mistake, read as true would switch a check off; an `algorithm` that names no supported algorithm, in `sign`, `verify` and `createJWKS` (where it would otherwise only skip the keys it applies to); a claim set both in the payload and through an option; a reserved or non-string header in `options.header`; a non-string `kid` for `importPEM`. A real algorithm that does not fit the key or the token stays a `JwtAlgorithmError`, and anything the token or the payload says stays a `JwtClaimError`.
+`sign` checks its options — `options.header` as serialized included — before the payload and the key, so a payload or key error never hides a mistake in them; the payload's own registered claims are checked before options add to them, so `aud: null` in the payload is the payload's fault. An option that puts a time past the plausible range (`expiresIn`, `notBefore`, `now`), or an `expiresIn` under a second (the token would expire as it is issued), is the option's fault. A `kid` in `options.header` beats the key's; a different `keyId` with it is an error; a millisecond `iat` in the payload is the payload's, and named before the `exp` computed from it.
+
+What else is a `JwtOptionError` ([ADR-008](../adr/ADR-008-option-errors.md)): a value of the wrong type or out of range (durations, `clockTolerance`, `now`, the string options, `requiredClaims`); a switch (`ignoreExpiration`, `ignoreNotBefore`, `allowShortSecret`, `noTimestamp`) that is not a boolean — `'true'` read as false would hide the mistake, read as true would switch a check off; an `algorithm` that names no supported algorithm, in `sign`, `verify`, `createJWKS` (where it would otherwise only skip the keys it applies to), and as the argument of `importPEM` and `importJWK` — checked before the PEM or JWK is looked at; a claim set both in the payload and through an option; a reserved or non-string header in `options.header`; a non-string `kid` for `importPEM`. A real algorithm that does not fit the key or the token stays a `JwtAlgorithmError`, and anything the token or the payload says stays a `JwtClaimError`.
 
 `verify` and `decodeUnverified` return the header and payload **deeply** frozen, so a verified `aud` array cannot be edited after the check.

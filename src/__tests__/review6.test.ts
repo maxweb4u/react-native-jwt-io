@@ -18,6 +18,7 @@ import {
   sign,
   verify,
 } from '../index';
+import { type JwkSet } from '../types/jwt';
 import { b64u, SECRET_32 } from './helpers/node';
 
 /** An HS256 token over `payload` (JSON text) and `header`, signed with SECRET_32. */
@@ -128,6 +129,40 @@ describe('#4 claim mismatch messages are escaped and bounded', () => {
   it('typ', () => {
     const token = sign({}, SECRET_32, { header: { typ: evil } });
     expect(() => verify(token, SECRET_32, { typ: 'JWT' })).toThrow(/^Unexpected header "typ" "a\\u2028FAKE/);
+  });
+});
+
+describe('#7 createJWKS checks its options before the set', () => {
+  it('an unknown algorithm with a malformed set', () => {
+    expect(() => createJWKS(null as unknown as JwkSet, { algorithm: 'RS999' as 'RS256' })).toThrow(JwtOptionError);
+    expect(() => createJWKS({ keys: [] }, { bogus: 1 } as object)).toThrow(JwtOptionError);
+  });
+});
+
+describe('#8 options are read once', () => {
+  const counting = (options: object) => {
+    const reads: Record<string, number> = {};
+    const proxy = new Proxy(options, {
+      get(target, name, receiver) {
+        reads[String(name)] = (reads[String(name)] ?? 0) + 1;
+        return Reflect.get(target, name, receiver) as unknown;
+      },
+    });
+    return { proxy, reads };
+  };
+
+  it('verify', () => {
+    const { proxy, reads } = counting({ algorithm: 'HS256', issuer: 'i', audience: 'a', subject: 's', typ: 'JWT', maxTokenAge: '1h' });
+    verify(sign({ iss: 'i', aud: 'a', sub: 's' }, SECRET_32), SECRET_32, proxy);
+    for (const name of ['algorithm', 'issuer', 'audience', 'subject', 'typ', 'maxTokenAge']) {
+      expect([name, reads[name]]).toEqual([name, 1]);
+    }
+  });
+
+  it('sign', () => {
+    const { proxy, reads } = counting({ algorithm: 'HS256' });
+    sign({}, SECRET_32, proxy);
+    expect(reads.algorithm).toBe(1);
   });
 });
 
