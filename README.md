@@ -53,14 +53,20 @@ Requirements:
 - **Expo:** works in **Expo Go** and in development builds — there is no native
   code, so no config plugin and no prebuild. Install with
   `npx expo install react-native-jwt-io@next`, and for PS* signing
-  `npx expo install react-native-get-random-values`, imported first as above;
-  Expo Go includes it. Run with Expo SDK 58 (React Native 0.88) in Expo Go on an
-  Android phone and an iOS simulator, development and minified bundles.
+  `npx expo install react-native-get-random-values`, imported first as above —
+  in Expo Go it draws its random bytes from Expo's own `expo-crypto` module,
+  which Expo Go ships; Expo itself provides no `crypto.getRandomValues`. Run with
+  Expo SDK 58 (React Native 0.88) in Expo Go on an Android phone and an iOS
+  simulator, development and minified bundles.
 - Node 20.19+ or 22.12+ works too (CommonJS and ESM): the CommonJS build loads
   the ES-module-only crypto packages with `require()`.
 - **Jest in your app:** the crypto packages are ES modules only, so let Jest
-  transform them —
-  `transformIgnorePatterns: ['node_modules/(?!(react-native|@react-native|@noble|micro-rsa-dsa-dh|react-native-jwt-io)/)']`.
+  transform them. Add `@noble|micro-rsa-dsa-dh|react-native-jwt-io` to your
+  preset's own `transformIgnorePatterns` rather than replacing it — with
+  `@react-native/jest-preset`:
+  `['node_modules/(?!(react-native|@react-native|@noble|micro-rsa-dsa-dh|react-native-jwt-io)/)']`;
+  with `jest-expo`:
+  `['/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|@noble|micro-rsa-dsa-dh|react-native-jwt-io))']`.
 
 ## Usage
 
@@ -328,6 +334,10 @@ What else changes:
   key (Keycloak's `public_key`) — also inside `.env` escapes, JSON quotes or
   another layer of base64 (Kubernetes secrets). A bare RSA modulus or EC
   coordinate cannot be told from a secret; do not configure one as one.
+- **Certificates are not keys.** 1.x verified with an X.509 certificate
+  (`-----BEGIN CERTIFICATE-----`), as Firebase's x509 endpoint publishes them;
+  `importPEM` refuses one. Extract its public key
+  (`openssl x509 -pubkey -noout`), or use the provider's JWKS with `createJWKS`.
 - **`iat` is added** to signed tokens unless `noTimestamp: true`.
 
 ## License

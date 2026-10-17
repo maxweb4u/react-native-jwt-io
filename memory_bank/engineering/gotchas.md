@@ -40,6 +40,8 @@ canonical_for:
 
 - **Expo Go keeps a production bundle by URL.** With `expo start --no-dev --minify`, reopening the same `exp://host:port` in Expo Go showed the previous bundle even after `--clear` — Metro logged no new "Bundled" line — and `CI=1` turns reloads off as well. Mark each variant visibly (a title) and use a new port, or run in development mode, which Expo Go does not keep. On the Realme RMX3363, `pm clear host.exp.exponent` over adb is refused. Seen on 2026-10-16 with Expo Go 58.0.4.
 
+- **react-native-get-random-values in Expo Go uses `expo-crypto`.** Expo provides no `crypto.getRandomValues` (measured: without a polyfill PS* fails in Expo Go), and the package is not in `expo/bundledNativeModules.json`; it works because its 2.x falls back to `global.expo.modules.ExpoCrypto` when its own native module is absent.
+
 ## Toolchain
 
 - **A Release build of `example/` on Android can ship a stale bundle.** Gradle's `createBundleReleaseJsAndAssets` tracks files under `example/` only; when only the library's `../src` changed, it reports `UP-TO-DATE` and the APK carries the previous JavaScript. Measured on 2026-10-16: a self-test "passed" on code from before the change. Delete `example/android/app/build/generated/assets/react` before the build, and confirm with `strings index.android.bundle | grep <a new message>`. Xcode's bundle phase runs on every build.

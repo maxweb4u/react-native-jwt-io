@@ -100,6 +100,9 @@ and the review that followed it; breaking against `2.0.0-alpha.0`.
   random source is now probed the way blinding draws from it.
 - `requiredClaims: null` switched the check off; it is now an error.
 - `sign({ aud: null }, key, { audience })` blamed the option, not the payload.
+- The README's refresh example used `clockTolerance`, which makes a token live
+  longer; it now asks with a later `now`. The Jest advice has a line for
+  `jest-expo`, whose own patterns it replaced.
 
 ### Security
 
