@@ -1,4 +1,4 @@
-import { type DecodedJwt, type JwtPayload } from '../types/jwt';
+import { type DecodedJwt, type JwtPayload, type PayloadShape } from '../types/jwt';
 import { parseToken } from './parse';
 
 /**
@@ -6,7 +6,7 @@ import { parseToken } from './parse';
  * Safe for display and for scheduling a refresh; never for deciding who the
  * caller is. Use `verify` for that.
  */
-export function decodeUnverified<TPayload = JwtPayload>(token: string): DecodedJwt<TPayload> {
+export function decodeUnverified<TPayload extends PayloadShape<TPayload> = JwtPayload>(token: string): DecodedJwt<TPayload> {
   const { header, payload } = parseToken(token);
-  return Object.freeze({ header, payload: payload as TPayload });
+  return Object.freeze({ header, payload: payload as DecodedJwt<TPayload>['payload'] });
 }

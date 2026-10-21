@@ -1,6 +1,6 @@
 {
   "name": "react-native-jwt-io",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.0-rc.0",
   "description": "Sign, verify and decode JSON Web Tokens in React Native. Pure TypeScript on Hermes: no native module, no server.",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -26,7 +26,9 @@
     "!**/*.test.ts"
   ],
   "sideEffects": [
+    "./src/index.ts",
     "./src/host/hostCheck.ts",
+    "./lib/*/index.js",
     "./lib/*/host/hostCheck.js"
   ],
   "engines": {

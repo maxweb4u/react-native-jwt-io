@@ -28,7 +28,7 @@ const { payload } = verify(token, publicKey); // throws if the signature, exp or
 npm install react-native-jwt-io@next
 ```
 
-2.0 is in alpha and published under the npm tag `next`; a plain
+2.0 is a release candidate, published under the npm tag `next`; a plain
 `npm install react-native-jwt-io` still installs 1.0.4, whose API this README
 does not describe.
 
@@ -45,14 +45,28 @@ Requirements:
 - Signing with **PS256/384/512** needs `crypto.getRandomValues`, which Hermes
   lacks. Install [`react-native-get-random-values`](https://github.com/LinusU/react-native-get-random-values)
   (2.x needs React Native 0.81 or later; use 1.11 below that) and import it
-  once, first in your entry file — before this library, which checks for it
-  when it loads. Nothing else needs it; without it, PS* signing throws
-  `JwtHostRequirementError` naming the package.
+  once, first in your entry file, before this library: the crypto code decides
+  when it loads whether it can blind its computations. PS* signing checks for
+  it when called and, without it, throws `JwtHostRequirementError` naming the
+  package. Nothing else needs it; with it, RS* signing is blinded against
+  timing attacks too.
+- **Expo:** works in **Expo Go** and in development builds — there is no native
+  code, so no config plugin and no prebuild. Install with
+  `npx expo install react-native-jwt-io@next`, and for PS* signing
+  `npx expo install react-native-get-random-values`, imported first as above —
+  in Expo Go it draws its random bytes from Expo's own `expo-crypto` module,
+  which Expo Go ships; Expo itself provides no `crypto.getRandomValues`. Run with
+  Expo SDK 58 (React Native 0.88) in Expo Go on an Android phone and an iOS
+  simulator, development and minified bundles.
 - Node 20.19+ or 22.12+ works too (CommonJS and ESM): the CommonJS build loads
   the ES-module-only crypto packages with `require()`.
 - **Jest in your app:** the crypto packages are ES modules only, so let Jest
-  transform them —
-  `transformIgnorePatterns: ['node_modules/(?!(react-native|@react-native|@noble|micro-rsa-dsa-dh|react-native-jwt-io)/)']`.
+  transform them. Add `@noble|micro-rsa-dsa-dh|react-native-jwt-io` to your
+  preset's own `transformIgnorePatterns` rather than replacing it — with
+  `@react-native/jest-preset`:
+  `['node_modules/(?!(react-native|@react-native|@noble|micro-rsa-dsa-dh|react-native-jwt-io)/)']`;
+  with `jest-expo`:
+  `['/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|@noble|micro-rsa-dsa-dh|react-native-jwt-io))']`.
 
 ## Usage
 
@@ -65,14 +79,19 @@ but it can read them, for example to refresh before expiry:
 import { decodeUnverified, isExpired, getExpiration } from 'react-native-jwt-io';
 
 const { payload } = decodeUnverified<{ sub: string; roles: string[] }>(accessToken);
-if (isExpired(accessToken, { clockTolerance: '30s' })) {
+// Refresh 30 seconds early: ask whether it will have expired by then.
+if (isExpired(accessToken, { now: new Date(Date.now() + 30_000) })) {
   await refresh();
 }
 const expiresAt = getExpiration(accessToken); // Date | null
 ```
 
 None of these check the signature. Use them for display and scheduling, never to
-decide who the user is.
+decide who the user is. `isExpired` and `getExpiration` read `exp` alone;
+`decodeUnverified` also checks the registered claims' types, so a token whose
+`sub` is a number (as `jsonwebtoken.sign({ sub: user.id })` writes it) is
+refused there, and by `verify`. `clockTolerance` works as in `verify`: it lets a
+token live *longer*, which is not what a refresh wants.
 
 ### Verify with a public key
 
@@ -119,7 +138,8 @@ const token = sign({ sub: deviceId }, key, { expiresIn: '5m', audience: 'api' })
 
 `iat` is set automatically (`noTimestamp: true` turns that off; an `iat` you put
 in the payload is kept either way). Times are seconds; a value that looks like
-milliseconds is refused.
+milliseconds (above `1e11`, the year 5138) is refused — in a payload you sign,
+and in a token you read, which would otherwise never expire.
 
 ### HMAC secrets
 
@@ -142,12 +162,12 @@ const strong = sign({ sub: 'u1' }, SECRET_64_BYTES, { algorithm: 'HS512' });
 | Function | Returns |
 |-|-|
 | `sign(payload, key, options?)` | `string` |
-| `verify<T>(token, key \| jwks, options?)` | `{ header, payload: T }` — or throws |
-| `decodeUnverified<T>(token)` | `{ header, payload: T }`, signature **not** checked |
+| `verify<T>(token, key \| jwks, options?)` | `{ header, payload }` — or throws |
+| `decodeUnverified<T>(token)` | `{ header, payload }`, signature **not** checked |
 | `isExpired(token, { clockTolerance?, now? }?)` | `boolean`; no `exp` means never |
 | `getExpiration(token)` | `Date \| null` |
-| `importPEM(pem, algorithm, { kid? }?)` | `JwtKey` — SPKI, PKCS#8, PKCS#1 (`RSA … KEY`), SEC1 (`EC PRIVATE KEY`) |
-| `importJWK(jwk, algorithm?)` | `JwtKey` — `RSA`, `EC`, `OKP` (Ed25519), `oct` |
+| `importPEM(pem, algorithm, { kid? }?)` | `JwtKey` — SPKI, PKCS#8, PKCS#1 (`RSA … KEY`), SEC1 (`EC PRIVATE KEY`); text around the block and an `EC PARAMETERS` block are ignored |
+| `importJWK(jwk, algorithm?)` | `JwtKey` — `RSA`, `EC`, `OKP` (Ed25519), `oct`; `key_ops`, if present, limits the key to the operations it lists |
 | `createJWKS({ keys }, { algorithm? }?)` | `JwtKeySet` |
 | `hexToBytes(hex)` | `Uint8Array` |
 
@@ -163,9 +183,20 @@ too; for a bare secret it also picks the HMAC), `issuer` (one or a list),
 `maxTokenAge` (requires `iat`), `clockTolerance`, `ignoreExpiration`,
 `ignoreNotBefore`, `now`, `allowShortSecret`.
 
+`T` describes your own claims and is added to the registered ones: with
+`verify<{ roles: string[] }>`, both `payload.roles` and `payload.exp` are
+typed, read-only. `T` may narrow a registered claim (`sub: string`) but not
+change its type: `exp: Date` does not compile. To pass `T` through a generic of
+your own, constrain it with `PayloadShape`:
+`<T extends PayloadShape<T>>`. Only the registered claims (`iss`, `sub`, `aud`,
+`exp`, `nbf`, `iat`, `jti`) are checked at run time; the rest of `T` is your
+assertion.
+
 Options are a plain object. An unknown option name is an error, not ignored: a
 misspelled `expiresin`, or jsonwebtoken's `maxAge`, would otherwise switch
-nothing on. So is a callback in place of options — nothing here takes one.
+nothing on. So is a callback in place of options — nothing here takes one —
+a switch such as `ignoreExpiration` that is not `true` or `false`, and an option
+no token could satisfy, such as `audience: []`.
 
 A token's `aud` is checked only when you pass `audience`. If your app accepts
 tokens from an issuer that serves several audiences, pass it.
@@ -173,6 +204,11 @@ tokens from an issuer that serves several audiences, pass it.
 Durations are seconds or strings: `'30s'`, `'15m'`, `'2.5h'`, `'7d'`, `'1 week'`,
 in whole seconds, rounded down. `clockTolerance` is at most a day: it is for
 clock skew; to accept expired tokens, say so with `ignoreExpiration`.
+
+Phone clocks drift. When you verify on a device, pass a `clockTolerance` of
+some seconds (`'30s'`), or a token's `nbf` can make it fail for its first
+moments. `iat` is compared with the clock only when you pass `maxTokenAge`, as
+in `jose`.
 
 `verify` and `decodeUnverified` return deeply frozen objects.
 
@@ -188,16 +224,30 @@ of the library in one bundle, where `instanceof` does not.
 | `JwtSignatureError` | `ERR_JWT_SIGNATURE_INVALID` | The signature does not verify |
 | `JwtExpiredError` | `ERR_JWT_EXPIRED` | `exp` passed, or older than `maxTokenAge`; has `expiredAt` |
 | `JwtNotBeforeError` | `ERR_JWT_NOT_BEFORE` | `nbf` in the future; has `notBefore` |
-| `JwtClaimError` | `ERR_JWT_CLAIM_INVALID` | A claim is wrong, missing, or of the wrong type, or a `sign`/`verify` option is malformed or unknown; has `claim` |
+| `JwtClaimError` | `ERR_JWT_CLAIM_INVALID` | A claim is wrong, missing, or of the wrong type; has `claim` |
+| `JwtOptionError` | `ERR_JWT_OPTION_INVALID` | A mistake in the call, not in the token: an unknown option, or one of the wrong type or out of range; has `option` |
 | `JwtKeyError` | `ERR_JWT_KEY_INVALID` | A key cannot be imported or used — including a public key passed as a secret, or a token whose `kid` names a key the JWKS could not import |
 | `JwtKeyNotFoundError` | `ERR_JWT_KEY_NOT_FOUND` | No key in the JWKS for the token's `kid` — or, without a `kid`, not exactly one for its `alg`; has `kid` |
 | `JwtHostRequirementError` | `ERR_JWT_HOST_REQUIREMENT` | The engine lacks a feature; has `feature` |
 | `JwtMigrationError` | `ERR_JWT_MIGRATION` | A 1.x function was called |
 
-Checks run in this order and stop at the first failure: option names, shape
-(including the types of the registered claims), algorithm and header extensions,
-key, signature, then claim values and the claim options' values (`clockTolerance`,
-`issuer`, …) — so claim values are never evaluated for an unsigned token.
+`JwtOptionError` means your code needs fixing, whatever the token was. Keep it
+apart when a failed `verify` signs the user out:
+
+```ts
+try {
+  return verify(token, key, { issuer: 'https://auth.example.com' });
+} catch (error) {
+  if (error instanceof JwtOptionError) throw error; // a bug in the call: let it surface
+  if (error instanceof JwtError) return signOut(); // the token is not acceptable
+  throw error;
+}
+```
+
+Checks run in this order and stop at the first failure: the options (names,
+types and ranges, before the token is read), shape (including the types of the
+registered claims), algorithm and header extensions, key, signature, then claim
+values — so claim values are never evaluated for an unsigned token.
 
 Error names are set as strings, so `error.name` reads `JwtExpiredError` in a
 minified release build too.
@@ -213,13 +263,38 @@ Measured on a mid-range Android phone (Realme RMX3363, 2021), Release build:
 | | verify | sign |
 |-|-|-|
 | HS256 | 0.9 ms | 0.8 ms |
-| RS256 / PS256 | 7.5 ms | 0.9 s (RS) |
+| RS256 / PS256 | 7.5 ms | 0.9–1 s |
 | ES256 | 60 ms | 14 ms |
 | EdDSA | 30 ms | 9 ms |
 
 ES384/ES512 verification takes 150–320 ms on the same phone. Every call runs on
 the JS thread; keep the slow ones out of render paths. ES256 verification is about
 50× faster than 1.x.
+
+## When you do not need this library
+
+- **You only read your own app's tokens.** Showing the user's name from an ID
+  token, or refreshing an access token before it expires, needs no
+  cryptography. [`jwt-decode`](https://github.com/auth0/jwt-decode) does that
+  and nothing else; this library's `decodeUnverified` and `isExpired` do the
+  same, but bring the crypto code into your bundle with them.
+- **Your server already checks the token.** A token your app received from its
+  own backend over HTTPS, and sends back with each request, is verified where
+  it matters — on the server. Verifying it again on the device protects
+  nothing. Verify on the device when the token reaches the app some other way:
+  a deep link, a QR code, another device, an offline licence, or a provider's
+  token used while offline.
+- **You can add a native module and need speed.** Pure JavaScript is slower
+  than native code: RSA signing takes most of a second here, and ES384/ES512
+  verification hundreds of milliseconds. [`jose`](https://github.com/panva/jose)
+  with [`react-native-quick-crypto`](https://github.com/margelo/react-native-quick-crypto),
+  which gives it a native WebCrypto, is the faster choice — at the price of a
+  native module, a development build instead of Expo Go, and an asynchronous API.
+
+This library is for the rest: verifying or signing on the device with no native
+code, in Expo Go too, synchronously, with defaults that refuse unsafe tokens.
+Never sign with an HMAC secret shipped inside the app — anyone can extract it
+([HMAC secrets](#hmac-secrets)).
 
 ## Migrating from 1.x
 
@@ -259,6 +334,10 @@ What else changes:
   key (Keycloak's `public_key`) — also inside `.env` escapes, JSON quotes or
   another layer of base64 (Kubernetes secrets). A bare RSA modulus or EC
   coordinate cannot be told from a secret; do not configure one as one.
+- **Certificates are not keys.** 1.x verified with an X.509 certificate
+  (`-----BEGIN CERTIFICATE-----`), as Firebase's x509 endpoint publishes them;
+  `importPEM` refuses one. Extract its public key
+  (`openssl x509 -pubkey -noout`), or use the provider's JWKS with `createJWKS`.
 - **`iat` is added** to signed tokens unless `noTimestamp: true`.
 
 ## License

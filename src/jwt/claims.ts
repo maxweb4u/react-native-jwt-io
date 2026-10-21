@@ -1,70 +1,123 @@
-import { JwtClaimError, JwtExpiredError, JwtNotBeforeError } from '../errors/errors';
+import { JwtClaimError, JwtExpiredError, JwtNotBeforeError, JwtOptionError } from '../errors/errors';
 import { type JwtHeader, type JwtPayload } from '../types/jwt';
 import { type Duration, type VerifyOptions } from '../types/options';
-import { fromNumericDate, MAX_CLOCK_TOLERANCE_SECONDS, MAX_DATE_SECONDS, parseDuration } from '../utils/time';
+import { describeValue } from '../utils/describe';
+import { fromNumericDate, MAX_CLOCK_TOLERANCE_SECONDS, MAX_DATE_SECONDS, MAX_PLAUSIBLE_NUMERIC_DATE, parseDuration } from '../utils/time';
+
+/** `verify`'s claim options, checked and normalized before the token is read. */
+export interface ClaimRules {
+  readonly now: number;
+  readonly tolerance: number;
+  readonly maxTokenAge: { readonly seconds: number; readonly label: Duration } | undefined;
+  readonly issuers: readonly string[] | undefined;
+  readonly audiences: readonly string[] | undefined;
+  readonly subject: string | undefined;
+  readonly typ: string | undefined;
+  readonly requiredClaims: readonly string[];
+  readonly ignoreExpiration: boolean;
+  readonly ignoreNotBefore: boolean;
+}
+
+/**
+ * Checks every claim option up front: a mistake in the call is a
+ * `JwtOptionError` whatever the token is, not only once a valid token
+ * reaches the claim checks — otherwise an expired or forged token would hide it.
+ */
+export function claimRules(options: VerifyOptions): ClaimRules {
+  // Each option read once: a getter must not answer one value to the check and another to the use.
+  const { maxTokenAge, subject, typ, issuer, audience, requiredClaims } = options;
+  const maxAge = durationOption(maxTokenAge, 'maxTokenAge');
+  if (maxAge === 0) {
+    throw new JwtOptionError('maxTokenAge', '"maxTokenAge" is 0 seconds: every token would be too old. Give a positive duration.');
+  }
+  if (subject !== undefined && typeof subject !== 'string') {
+    throw new JwtOptionError('subject', 'The "subject" option must be a string.');
+  }
+  if (typ !== undefined && typeof typ !== 'string') {
+    throw new JwtOptionError('typ', 'The "typ" option must be a string.');
+  }
+  return {
+    now: currentSeconds(options.now),
+    tolerance: clockToleranceOption(options.clockTolerance),
+    maxTokenAge: maxAge === undefined ? undefined : { seconds: maxAge, label: maxTokenAge as Duration },
+    // Not empty: an empty list would refuse every token, as if the token were at fault.
+    issuers: issuer === undefined ? undefined : stringList(issuer, 'issuer', { nonEmpty: true }),
+    audiences: audience === undefined ? undefined : stringList(audience, 'audience', { nonEmpty: true }),
+    subject,
+    typ,
+    requiredClaims: requiredClaims === undefined ? [] : stringList(requiredClaims, 'requiredClaims'),
+    ignoreExpiration: booleanOption(options.ignoreExpiration, 'ignoreExpiration'),
+    ignoreNotBefore: booleanOption(options.ignoreNotBefore, 'ignoreNotBefore'),
+  };
+}
 
 /**
  * Claim rules, applied only after the signature holds.
  * See memory_bank/domain/validation.md#time-claims and #other-claims.
  */
-export function validateClaims(header: JwtHeader, payload: JwtPayload, options: VerifyOptions): void {
-  const now = currentSeconds(options.now);
-  const tolerance = clockToleranceOption(options.clockTolerance);
+export function validateClaims(header: JwtHeader, payload: JwtPayload, rules: ClaimRules): void {
+  const { now, tolerance } = rules;
 
   // Compared against the exact time, not the second it falls in: a
   // fractional exp must not live up to a second longer than it says.
   const exp = numericClaim(payload, 'exp');
-  if (exp !== undefined && options.ignoreExpiration !== true && now - tolerance >= exp) {
+  if (exp !== undefined && !rules.ignoreExpiration && now - tolerance >= exp) {
     throw new JwtExpiredError(`The token expired at ${fromNumericDate(exp).toISOString()}.`, fromNumericDate(exp));
   }
   const nbf = numericClaim(payload, 'nbf');
-  if (nbf !== undefined && options.ignoreNotBefore !== true && now + tolerance < nbf) {
+  if (nbf !== undefined && !rules.ignoreNotBefore && now + tolerance < nbf) {
     throw new JwtNotBeforeError(`The token is not valid before ${fromNumericDate(nbf).toISOString()}.`, fromNumericDate(nbf));
   }
   const iat = numericClaim(payload, 'iat');
-  if (iat !== undefined && iat > now + tolerance) {
-    throw new JwtClaimError('iat', 'The token was issued in the future ("iat" is later than now).');
-  }
-  const maxAge = durationOption(options.maxTokenAge, 'maxTokenAge');
-  if (maxAge !== undefined) {
+  // iat is only checked when the caller asks for an age limit, as in jose:
+  // a device clock a few seconds behind the issuer's would otherwise refuse
+  // every fresh token, and exp and nbf already bound the token's validity.
+  if (rules.maxTokenAge !== undefined) {
     if (iat === undefined) {
       throw new JwtClaimError('iat', '"maxTokenAge" was given, but the token has no "iat".');
     }
+    if (iat > now + tolerance) {
+      throw new JwtClaimError('iat', 'The token was issued in the future ("iat" is later than now).');
+    }
     // Like exp: at exactly iat + maxTokenAge the token is too old.
-    if (now - tolerance >= iat + maxAge) {
-      throw new JwtExpiredError(`The token is older than maxTokenAge (${options.maxTokenAge}).`, fromNumericDate(iat + maxAge));
+    const until = iat + rules.maxTokenAge.seconds;
+    if (now - tolerance >= until) {
+      throw new JwtExpiredError(`The token is older than maxTokenAge (${rules.maxTokenAge.label}).`, fromNumericDate(until));
     }
   }
 
-  if (options.issuer !== undefined && !stringList(options.issuer, 'issuer').includes(payload.iss as string)) {
-    throw new JwtClaimError('iss', `Unexpected issuer ${JSON.stringify(payload.iss)}.`);
+  if (rules.issuers !== undefined && !rules.issuers.includes(payload.iss as string)) {
+    throw new JwtClaimError('iss', `Unexpected issuer ${describeValue(payload.iss)}.`);
   }
-  if (options.audience !== undefined) {
-    const expected = stringList(options.audience, 'audience');
+  if (rules.audiences !== undefined) {
+    const expected = rules.audiences;
     const actual = typeof payload.aud === 'string' ? [payload.aud] : (payload.aud ?? []);
     if (!actual.some((aud) => expected.includes(aud))) {
-      throw new JwtClaimError('aud', `Unexpected audience ${JSON.stringify(payload.aud)}.`);
+      throw new JwtClaimError('aud', `Unexpected audience ${describeValue(payload.aud)}.`);
     }
   }
-  if (options.subject !== undefined && typeof options.subject !== 'string') {
-    throw new JwtClaimError('sub', 'The "subject" option must be a string.');
+  if (rules.subject !== undefined && payload.sub !== rules.subject) {
+    throw new JwtClaimError('sub', `Unexpected subject ${describeValue(payload.sub)}.`);
   }
-  if (options.subject !== undefined && payload.sub !== options.subject) {
-    throw new JwtClaimError('sub', `Unexpected subject ${JSON.stringify(payload.sub)}.`);
+  if (rules.typ !== undefined && (typeof header.typ !== 'string' || normalizeTyp(header.typ) !== normalizeTyp(rules.typ))) {
+    throw new JwtClaimError('typ', `Unexpected header "typ" ${describeValue(header.typ)}.`);
   }
-  if (options.typ !== undefined) {
-    if (typeof options.typ !== 'string') {
-      throw new JwtClaimError('typ', 'The "typ" option must be a string.');
-    }
-    if (typeof header.typ !== 'string' || normalizeTyp(header.typ) !== normalizeTyp(options.typ)) {
-      throw new JwtClaimError('typ', `Unexpected header "typ" ${JSON.stringify(header.typ)}.`);
-    }
-  }
-  for (const claim of stringList(options.requiredClaims ?? [], 'requiredClaims')) {
+  for (const claim of rules.requiredClaims) {
     if (!Object.prototype.hasOwnProperty.call(payload, claim)) {
       throw new JwtClaimError(claim, `The token has no "${claim}" claim.`);
     }
   }
+}
+
+/**
+ * A switch must be a boolean: `ignoreExpiration: 'false'` read as truthy
+ * would switch a check off, and read as false would hide the mistake.
+ */
+export function booleanOption(value: unknown, name: string): boolean {
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw new JwtOptionError(name, `"${name}" must be true or false; got ${describeValue(value)}.`);
+  }
+  return value === true;
 }
 
 /**
@@ -77,7 +130,7 @@ export function currentSeconds(now: unknown): number {
     return Date.now() / 1000;
   }
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
-    throw new JwtClaimError('now', 'The "now" option must be a valid Date.');
+    throw new JwtOptionError('now', 'The "now" option must be a valid Date.');
   }
   return now.getTime() / 1000;
 }
@@ -96,14 +149,19 @@ export function validateRegisteredClaims(payload: Record<string, unknown>): void
   if (aud !== undefined && typeof aud !== 'string' && !(Array.isArray(aud) && aud.every((a) => typeof a === 'string'))) {
     throw new JwtClaimError('aud', '"aud" must be a string or an array of strings.');
   }
-  for (const name of ['exp', 'nbf', 'iat'] as const) {
+  // iat first: when a payload passed to sign has a millisecond iat, the exp
+  // and nbf computed from it are off too, and iat is the cause to name.
+  for (const name of ['iat', 'exp', 'nbf'] as const) {
     numericClaim(payload, name);
   }
 }
 
 /**
  * A time claim must be a finite number when present — a string `exp` is not
- * "no expiry" — and inside the range a Date can represent.
+ * "no expiry" — inside the range a Date can represent, and not past 1e11
+ * (the year 5138): such a value is milliseconds, and read as seconds a token
+ * that expired an hour ago would never expire. Refused in reading as in
+ * signing; no issuer means it.
  */
 export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): number | undefined {
   const value = payload[name];
@@ -116,6 +174,12 @@ export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): 
   if (Math.abs(value) > MAX_DATE_SECONDS) {
     throw new JwtClaimError(name, `"${name}" is ${value}, outside the range of dates (±${MAX_DATE_SECONDS} seconds).`);
   }
+  if (value > MAX_PLAUSIBLE_NUMERIC_DATE) {
+    throw new JwtClaimError(
+      name,
+      `"${name}" is ${value}, which looks like milliseconds or an overflow. JWT times are seconds: use Math.floor(Date.now() / 1000).`,
+    );
+  }
   return value;
 }
 
@@ -123,7 +187,7 @@ export function numericClaim(payload: JwtPayload, name: 'exp' | 'nbf' | 'iat'): 
 export function clockToleranceOption(value: Duration | undefined): number {
   const seconds = durationOption(value, 'clockTolerance') ?? 0;
   if (seconds > MAX_CLOCK_TOLERANCE_SECONDS) {
-    throw new JwtClaimError(
+    throw new JwtOptionError(
       'clockTolerance',
       `"clockTolerance" is ${seconds} seconds; the most is ${MAX_CLOCK_TOLERANCE_SECONDS} (a day). Clock skew is seconds or minutes — to accept expired tokens, use ignoreExpiration.`,
     );
@@ -137,20 +201,23 @@ export function durationOption(value: Duration | undefined, name: string): numbe
   }
   const seconds = parseDuration(value);
   if (seconds === null) {
-    throw new JwtClaimError(name, `"${name}" must be a number of seconds or a duration such as '30s', '15m', '2h', '7d'.`);
+    throw new JwtOptionError(name, `"${name}" must be a number of seconds or a duration such as '30s', '15m', '2h', '7d'.`);
   }
   return seconds;
 }
 
-/** A string or an array of strings, as an array; anything else is a caller error. */
-export function stringList(value: unknown, name: string): readonly string[] {
+/** An option that is a string or an array of strings, as an array; anything else is a caller error. */
+export function stringList(value: unknown, name: string, { nonEmpty = false } = {}): readonly string[] {
   if (typeof value === 'string') {
     return [value];
   }
   if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    if (nonEmpty && value.length === 0) {
+      throw new JwtOptionError(name, `"${name}" is an empty list, which no token could match. Leave it out, or name at least one.`);
+    }
     return value as string[];
   }
-  throw new JwtClaimError(name, `"${name}" must be a string or an array of strings.`);
+  throw new JwtOptionError(name, `"${name}" must be a string or an array of strings.`);
 }
 
 /**

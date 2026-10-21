@@ -1,5 +1,5 @@
 import { ecPublicKeyFromPrivate, ed25519PublicKeyFromPrivate, EC_FIELD_BYTES, isValidEd25519PublicKey, normalizeEcPublicKey } from '../crypto/curves';
-import { JwtKeyError } from '../errors/errors';
+import { JwtKeyError, JwtOptionError } from '../errors/errors';
 import { type Algorithm, isAlgorithm } from '../types/algorithm';
 import { base64Decode } from '../utils/base64';
 import { equalBytes } from '../utils/bytes';
@@ -42,7 +42,7 @@ const CURVE_BY_OID: Record<string, EcCurve> = {
 
 export interface ImportOptions {
   /** Stored on the key and written to the header `kid` when signing. */
-  readonly kid?: string;
+  readonly kid?: string | undefined;
 }
 
 /**
@@ -54,16 +54,17 @@ export interface ImportOptions {
  */
 export function importPEM(pem: string, algorithm: Algorithm, options: ImportOptions = {}): JwtKey {
   const opts: ImportOptions = options ?? {};
-  assertKnownOptions(opts, ['kid'], (_name, message) => new JwtKeyError(message));
+  assertKnownOptions(opts, ['kid']);
   const kid = opts.kid;
   if (kid !== undefined && typeof kid !== 'string') {
-    throw new JwtKeyError('The "kid" option must be a string.');
+    throw new JwtOptionError('kid', 'The "kid" option must be a string.');
+  }
+  // The algorithm argument first: naming no algorithm is a mistake in the call, whatever the PEM.
+  if (!isAlgorithm(algorithm)) {
+    throw new JwtOptionError('algorithm', `importPEM needs the key's algorithm, such as 'RS256' or 'ES256'; got ${describeValue(algorithm)}.`);
   }
   if (typeof pem !== 'string') {
     throw new JwtKeyError('importPEM expects the PEM text as a string.');
-  }
-  if (!isAlgorithm(algorithm)) {
-    throw new JwtKeyError(`importPEM needs the key's algorithm, such as 'RS256' or 'ES256'; got ${describeValue(algorithm)}.`);
   }
   if (algorithm.startsWith('HS')) {
     throw new JwtKeyError('HMAC secrets are not PEM keys. Pass the secret itself as a string or Uint8Array.');
@@ -97,16 +98,59 @@ interface Parsed {
   readonly pssHash?: 256 | 384 | 512;
 }
 
+// Far above any key this library accepts (a 16,384-bit RSA private key is
+// about 13 KB of PEM); bounds the block search below.
+const MAX_PEM_LENGTH = 65536;
+// The body stops at the first "-----" (tempered), so a missing END costs one
+// scan, not one per line. Spaces may end the BEGIN line, as OpenSSL allows.
+const PEM_BLOCK = /-----BEGIN ([A-Z0-9 ]+)-----[ \t]*\r?\n((?:(?!-----)[\s\S])*?)\r?\n?-----END ([A-Z0-9 ]+)-----/g;
+const PEM_BEGIN = /-----BEGIN ([A-Z0-9 ]+)-----/g;
+
+/**
+ * The one key block in `pem`. As OpenSSL and Node read it: text around the
+ * blocks is ignored (the "Bag Attributes" openssl pkcs12 writes, a comment, a
+ * trailing newline), and so is an EC PARAMETERS block, which
+ * `openssl ecparam -genkey` writes before the key. Two key blocks are an error:
+ * which one was meant would be a guess.
+ */
 function readPem(pem: string): { label: string; der: Uint8Array } {
-  const match = /^\s*-----BEGIN ([A-Z0-9 ]+)-----\r?\n([\s\S]*?)\r?\n?-----END \1-----\s*$/.exec(pem);
-  if (!match) {
-    throw new JwtKeyError('The key is not a single PEM block (-----BEGIN …----- / -----END …-----).');
+  if (pem.length > MAX_PEM_LENGTH) {
+    throw new JwtKeyError(`The PEM text is longer than ${MAX_PEM_LENGTH} characters; no key this library reads is that large.`);
   }
-  const label = match[1] as string;
-  const body = match[2] as string;
-  if (body.includes('-----')) {
-    throw new JwtKeyError('The key is not a single PEM block (-----BEGIN …----- / -----END …-----).');
+  const blocks: { label: string; body: string }[] = [];
+  let complete = 0;
+  for (const match of pem.matchAll(PEM_BLOCK)) {
+    if (match[1] !== match[3]) {
+      throw new JwtKeyError(`A PEM block begins with "${match[1] as string}" but ends with "${match[3] as string}".`);
+    }
+    complete++;
+    if (match[1] !== 'EC PARAMETERS') {
+      blocks.push({ label: match[1] as string, body: match[2] as string });
+    }
   }
+  if (blocks.length === 0 && !pem.trim().includes('\n') && pem.includes('\\n')) {
+    throw new JwtKeyError(
+      'The PEM text has the two characters \\n where its line breaks should be (as .env files hold it). Replace them with real line breaks: pem.replace(/\\\\n/g, \'\\n\').',
+    );
+  }
+  // A BEGIN without its block — no END, or a "-----" inside the body — is an
+  // error, as in OpenSSL: skipping it would import the next block instead.
+  for (const begin of pem.matchAll(PEM_BEGIN)) {
+    complete--;
+    if (complete < 0) {
+      throw new JwtKeyError(`The PEM block "${begin[0]}" is not complete: no END line, or a broken body.`);
+    }
+  }
+  if (blocks.length === 0 && /-----BEGIN EC PARAMETERS-----/.test(pem)) {
+    throw new JwtKeyError('The PEM text holds only EC PARAMETERS — a curve, not a key. Generate the key with openssl ecparam -genkey -name prime256v1 -noout.');
+  }
+  if (blocks.length === 0) {
+    throw new JwtKeyError('The key is not a PEM block (-----BEGIN …----- on its own line, the base64 body, -----END …-----).');
+  }
+  if (blocks.length > 1) {
+    throw new JwtKeyError(`The PEM text holds ${blocks.length} blocks (${blocks.map((block) => block.label).join(', ')}); pass the one key to import.`);
+  }
+  const { label, body } = blocks[0] as { label: string; body: string };
   if (label === 'CERTIFICATE') {
     throw new JwtKeyError('X.509 certificates are not supported. Extract the public key (openssl x509 -pubkey -noout) and import that.');
   }

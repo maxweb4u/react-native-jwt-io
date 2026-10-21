@@ -11,6 +11,8 @@ import jwt, {
   importJWK,
   importPEM,
   isExpired,
+  JwtError,
+  JwtOptionError,
   sign,
   verify,
 } from '../index';
@@ -21,8 +23,13 @@ it('Read a token from your server', () => {
   const accessToken = sign({ sub: 'u1', roles: ['admin'] }, SECRET_32, { expiresIn: '1h' });
   const { payload } = decodeUnverified<{ sub: string; roles: string[] }>(accessToken);
   expect(payload.roles).toEqual(['admin']);
-  expect(isExpired(accessToken, { clockTolerance: '30s' })).toBe(false);
+  // Refresh 30 seconds early: ask whether it will have expired by then.
+  expect(isExpired(accessToken, { now: new Date(Date.now() + 30_000) })).toBe(false);
   expect(getExpiration(accessToken)).toBeInstanceOf(Date);
+  // A token with 20 seconds left is due for a refresh; clockTolerance would say the opposite.
+  const nearlyDone = sign({}, SECRET_32, { expiresIn: 20 });
+  expect(isExpired(nearlyDone, { now: new Date(Date.now() + 30_000) })).toBe(true);
+  expect(isExpired(nearlyDone, { clockTolerance: '30s' })).toBe(false);
 });
 
 it('Verify with a public key', () => {
@@ -62,4 +69,24 @@ it('Migrating from 1.x', () => {
   expect(() => jwt.encode()).toThrow(/sign\(payload, key, options\)/);
   const legacy = sign({ id: 'u1' }, hexToBytes('deadbeef'), { allowShortSecret: true });
   expect(verify(legacy, hexToBytes('deadbeef'), { allowShortSecret: true }).payload.id).toBe('u1');
+});
+
+it('Errors: keep JwtOptionError apart from a bad token', () => {
+  const rsa = nodeKeyPair('rsa');
+  const key = importPEM(pem(rsa.publicKey), 'RS256');
+  const signOut = () => 'signed out';
+  const check = (token: string, options: object) => {
+    try {
+      return verify(token, key, { issuer: 'https://auth.example.com', ...options });
+    } catch (error) {
+      if (error instanceof JwtOptionError) throw error; // a bug in the call: let it surface
+      if (error instanceof JwtError) return signOut(); // the token is not acceptable
+      throw error;
+    }
+  };
+  const good = nodeSign('RS256', rsa.privateKey, { iss: 'https://auth.example.com' });
+  const other = nodeSign('RS256', rsa.privateKey, { iss: 'https://elsewhere.example.com' });
+  expect(check(good, {})).toMatchObject({ payload: { iss: 'https://auth.example.com' } });
+  expect(check(other, {})).toBe('signed out');
+  expect(() => check(other, { maxAge: '1h' })).toThrow(JwtOptionError);
 });

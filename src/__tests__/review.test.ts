@@ -35,12 +35,12 @@ describe('#1 an invalid "now" never switches the time checks off', () => {
   const expired = sign({}, SECRET_32, { now: at(T), expiresIn: 10 });
 
   it.each([new Date('x'), 5, '2026-01-01', null])('verify refuses now = %p', (now) => {
-    expect(() => verify(expired, SECRET_32, { now: now as Date })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => verify(expired, SECRET_32, { now: now as Date })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('isExpired and sign refuse it too', () => {
-    expect(() => isExpired(expired, { now: new Date('x') })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
-    expect(() => sign({}, SECRET_32, { now: new Date('x') })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => isExpired(expired, { now: new Date('x') })).toThrow(code('ERR_JWT_OPTION_INVALID'));
+    expect(() => sign({}, SECRET_32, { now: new Date('x') })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 });
 
@@ -52,14 +52,14 @@ describe('#2 an absurd clockTolerance is refused, not treated as infinite', () =
     'verify and isExpired refuse clockTolerance %p, which would switch exp off',
     (clockTolerance) => {
       expect(() => verify(expired, SECRET_32, { now: at(T + 1e9), clockTolerance })).toThrow(
-        expect.objectContaining({ code: 'ERR_JWT_CLAIM_INVALID', claim: 'clockTolerance' }),
+        expect.objectContaining({ code: 'ERR_JWT_OPTION_INVALID', option: 'clockTolerance' }),
       );
-      expect(() => isExpired(expired, { now: at(T + 1e9), clockTolerance })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+      expect(() => isExpired(expired, { now: at(T + 1e9), clockTolerance })).toThrow(code('ERR_JWT_OPTION_INVALID'));
     },
   );
 
   it('rejects a string too long to be a duration', () => {
-    expect(() => verify(expired, SECRET_32, { clockTolerance: `${'9'.repeat(400)}s` })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => verify(expired, SECRET_32, { clockTolerance: `${'9'.repeat(400)}s` })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 });
 
@@ -130,7 +130,7 @@ describe('#7 importPEM refuses a non-string kid', () => {
   it('throws instead of writing kid: 5 into tokens it then rejects', () => {
     const ec = nodeKeyPair('P-256');
     // @ts-expect-error kid must be a string
-    expect(() => importPEM(pem(ec.privateKey), 'ES256', { kid: 5 })).toThrow(code('ERR_JWT_KEY_INVALID'));
+    expect(() => importPEM(pem(ec.privateKey), 'ES256', { kid: 5 })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 });
 
@@ -146,11 +146,11 @@ describe('#8 caller mistakes are JwtErrors, not TypeErrors', () => {
 
   it('names a malformed option', () => {
     // @ts-expect-error audience cannot be null
-    expect(() => sign({}, SECRET_32, { audience: null })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, { audience: null })).toThrow(code('ERR_JWT_OPTION_INVALID'));
     // @ts-expect-error issuer must be a string
-    expect(() => sign({}, SECRET_32, { issuer: 5 })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, { issuer: 5 })).toThrow(code('ERR_JWT_OPTION_INVALID'));
     // @ts-expect-error audience must be strings
-    expect(() => verify(token, SECRET_32, { audience: 5 })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => verify(token, SECRET_32, { audience: 5 })).toThrow(code('ERR_JWT_OPTION_INVALID'));
     expect(() => hexToBytes('zz')).toThrow(code('ERR_JWT_KEY_INVALID'));
   });
 });
@@ -181,7 +181,7 @@ describe('#9 registered claims and header fields have the types the API promises
 describe('#10 what is signed is what was checked', () => {
   it('refuses a header whose toJSON rewrites alg', () => {
     const header = { toJSON: () => ({ alg: 'none' }) };
-    expect(() => sign({}, SECRET_32, { header })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, { header })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
 
   it('refuses a payload whose toJSON returns a non-object or wrong types', () => {
@@ -255,9 +255,9 @@ describe('#15 results and constants are frozen', () => {
 
 describe('#16 computed times are checked like given ones', () => {
   it('refuses an expiresIn that overflows into an implausible exp', () => {
-    // The longest duration accepted, added to now, is past the plausible range.
-    expect(() => sign({}, SECRET_32, { expiresIn: 1e11 })).toThrow(expect.objectContaining({ claim: 'exp' }));
-    expect(() => sign({}, SECRET_32, { expiresIn: 1e300 })).toThrow(expect.objectContaining({ claim: 'expiresIn' }));
+    // The longest duration accepted, added to now, is past the plausible range: the option's fault.
+    expect(() => sign({}, SECRET_32, { expiresIn: 1e11 })).toThrow(expect.objectContaining({ option: 'expiresIn' }));
+    expect(() => sign({}, SECRET_32, { expiresIn: 1e300 })).toThrow(expect.objectContaining({ option: 'expiresIn' }));
   });
 });
 

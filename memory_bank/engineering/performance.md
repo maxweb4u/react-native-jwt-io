@@ -51,6 +51,12 @@ The 14-check self-test of `example/`, Release builds, after both review rounds o
 
 With `react-native-get-random-values` added to `example/` (15 checks), RSA-PSS signs on the phone for the first time: PS256 828 ms, PS384 826 ms, PS512 832 ms (511 ms each on the iOS simulator) — the cost of RS256 signing, as expected (the private-key operation dominates; the salt is 32–64 random bytes).
 
+## With RSA blinding — measured 2026-10-17
+
+RSA signing is blinded when `crypto.getRandomValues` exists ([../domain/keys.md](../domain/keys.md#rsa-blinding)). One Release run each, before and after: on the Realme RMX3363 RS256 signing took 1010 ms (849 ms unblinded), PS256 846–882 ms (824–832 ms); on the iOS 18.3 simulator RS256 506 ms (483 ms), PS256 501–514 ms (488–512 ms). Blinding adds an inverse and a random draw to a private operation of about 0.8 s — a few to twenty percent in these single runs, within the run-to-run spread on the phone. Verification is unaffected.
+
+After the third review round of 2026-10-17 the random-source probe draws modulus-sized numbers before each RSA signature, as blinding does (up to 32 draws, usually two). One Release run each: RS256 signing 869 ms on the Realme RMX3363 and 504 ms on the iOS 18.3 simulator, PS256–512 844–856 ms on the phone — within the spread above.
+
 ## An older Hermes — measured 2026-10-15
 
 Official Hermes v0.12.0 CLI (August 2022, the React Native 0.70/0.71 era) on the same Mac, with the self-test compiled through React Native 0.71's Babel preset and run as bytecode: all 12 checks of the time pass, and the times match the 0.87 simulator within 10% (ES256 verify 37 ms, RS256 verify 5.7 ms, EdDSA verify 18 ms). An old app gains nothing and loses nothing by its Hermes version.

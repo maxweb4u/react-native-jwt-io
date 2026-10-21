@@ -1,13 +1,13 @@
 import { verifyBytes } from '../crypto/backend';
-import { JwtAlgorithmError, JwtClaimError, JwtMalformedError, JwtSignatureError } from '../errors/errors';
+import { JwtAlgorithmError, JwtMalformedError, JwtSignatureError } from '../errors/errors';
 import { isJwtKeySet, type JwtKeySet, selectKey } from '../keys/jwks';
-import { assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
+import { assertKeyOperation, assertSecretStrength, type KeyInput, resolveKey } from '../keys/resolveKey';
 import { isAlgorithm } from '../types/algorithm';
-import { type DecodedJwt, type JwtPayload } from '../types/jwt';
+import { type DecodedJwt, type JwtPayload, type PayloadShape } from '../types/jwt';
 import { type VerifyOptions } from '../types/options';
 import { describeValue } from '../utils/describe';
-import { assertKnownOptions } from '../utils/options';
-import { validateClaims } from './claims';
+import { assertAlgorithmOption, assertKnownOptions } from '../utils/options';
+import { booleanOption, claimRules, validateClaims } from './claims';
 import { parseToken } from './parse';
 
 const VERIFY_OPTIONS = [
@@ -33,13 +33,18 @@ const VERIFY_OPTIONS = [
  * a bare secret is HS256 unless `options.algorithm` says otherwise.
  * See memory_bank/domain/validation.md#order.
  */
-export function verify<TPayload = JwtPayload>(
+export function verify<TPayload extends PayloadShape<TPayload> = JwtPayload>(
   token: string,
   key: KeyInput | JwtKeySet,
   options: VerifyOptions = {},
 ): DecodedJwt<TPayload> {
   const opts: VerifyOptions = options ?? {};
-  assertKnownOptions(opts, VERIFY_OPTIONS, (name, message) => new JwtClaimError(name, message));
+  assertKnownOptions(opts, VERIFY_OPTIONS);
+  // Read once: a getter must not answer one value to the check and another to the use.
+  const algorithm = opts.algorithm;
+  assertAlgorithmOption(algorithm);
+  const allowShortSecret = booleanOption(opts.allowShortSecret, 'allowShortSecret');
+  const rules = claimRules(opts);
   const { header, payload, signingInput, signature } = parseToken(token);
 
   const alg = header.alg as string;
@@ -47,7 +52,7 @@ export function verify<TPayload = JwtPayload>(
     throw new JwtAlgorithmError('Unsigned tokens (alg "none") are never accepted.');
   }
   if (!isAlgorithm(alg)) {
-    throw new JwtAlgorithmError(`Unsupported algorithm "${alg}".`);
+    throw new JwtAlgorithmError(`Unsupported algorithm ${describeValue(alg)}.`);
   }
   // RFC 7515 §4.1.11: an extension we do not understand must not be ignored.
   if (header.crit !== undefined) {
@@ -59,19 +64,20 @@ export function verify<TPayload = JwtPayload>(
 
   // `algorithm` pins the token's alg, for a key set as for a single key —
   // checked before the set is searched, so the error names the real cause.
-  if (opts.algorithm !== undefined && opts.algorithm !== alg) {
-    throw new JwtAlgorithmError(`The token is signed with ${alg}, but options.algorithm is ${describeValue(opts.algorithm)}.`);
+  if (algorithm !== undefined && algorithm !== alg) {
+    throw new JwtAlgorithmError(`The token is signed with ${alg}, but options.algorithm is ${describeValue(algorithm)}.`);
   }
   const chosen = isJwtKeySet(key) ? selectKey(key, header.kid, alg) : key;
-  const resolved = resolveKey(chosen, opts.algorithm);
+  const resolved = resolveKey(chosen, algorithm);
   if (resolved.algorithm !== alg) {
     throw new JwtAlgorithmError(`The token is signed with ${alg}, but the key is for ${resolved.algorithm}.`);
   }
-  assertSecretStrength(resolved, opts.allowShortSecret);
+  assertKeyOperation(resolved, 'verify');
+  assertSecretStrength(resolved, allowShortSecret);
   if (!verifyBytes(alg, resolved.material, signingInput, signature)) {
     throw new JwtSignatureError();
   }
 
-  validateClaims(header, payload, opts);
-  return Object.freeze({ header, payload: payload as TPayload });
+  validateClaims(header, payload, rules);
+  return Object.freeze({ header, payload: payload as DecodedJwt<TPayload>['payload'] });
 }

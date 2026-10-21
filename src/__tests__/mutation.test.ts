@@ -208,8 +208,8 @@ describe('keys', () => {
 });
 
 describe('claims and options', () => {
-  it('K:C12 an iat one second in the future', () => {
-    expect(() => verify(sign({ iat: T + 1 }, SECRET_32), SECRET_32, { now: at(T) })).toThrow(/issued in the future/);
+  it('K:C12 an iat one second in the future, with maxTokenAge', () => {
+    expect(() => verify(sign({ iat: T + 1 }, SECRET_32), SECRET_32, { now: at(T), maxTokenAge: 60 })).toThrow(/issued in the future/);
   });
   it('K:C13 audience required but the token has none', () => {
     expect(() => verify(sign({}, SECRET_32), SECRET_32, { audience: 'app' })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
@@ -232,7 +232,7 @@ describe('claims and options', () => {
   });
   it('K:S5 a header toJSON that adds crit', () => {
     const header = { toJSON: () => ({ alg: 'HS256', typ: 'JWT', crit: ['exp'] }) };
-    expect(() => sign({}, SECRET_32, { header })).toThrow(code('ERR_JWT_CLAIM_INVALID'));
+    expect(() => sign({}, SECRET_32, { header })).toThrow(code('ERR_JWT_OPTION_INVALID'));
   });
   it('K:S7 an iat in milliseconds', () => {
     expect(() => sign({ iat: T * 1000 }, SECRET_32)).toThrow(/milliseconds/);

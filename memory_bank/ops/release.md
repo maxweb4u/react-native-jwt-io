@@ -36,7 +36,7 @@ The end date is written into the README with the 2.0.0 release. Decided in [ADR-
 ## Checklist
 
 1. `npm run verify` passes.
-2. `example/` runs in a Release build on a physical device or simulator on both platforms, and its self-test screen reads 15/15.
+2. `example/` runs in a Release build on a physical device or simulator on both platforms, and its self-test screen reads 16/16.
 3. `npm pack --dry-run` lists only `lib/`, `src/`, `README.md`, `LICENSE`, `CHANGELOG.md`, `package.json`.
 4. `CHANGELOG.md` has an entry; for 2.0.0 the README carries the migration guide and the 1.0.x end-of-support date. While a prerelease is out, the README installs `react-native-jwt-io@next`, because `latest` is still 1.x; the release that moves `latest` to 2.x drops the `@next` and the note under it.
 5. The memory bank matches the change ([../dna/lifecycle.md](../dna/lifecycle.md)).
@@ -45,6 +45,14 @@ The end date is written into the README with the 2.0.0 release. Decided in [ADR-
    - a release: `npm publish`;
    - a prerelease (`2.0.0-alpha.0`, `-beta.N`, `-rc.N`): `npm publish --tag next`. Without `--tag`, npm moves `latest` to it, and every `npm install react-native-jwt-io` — 1.x users included — gets the breaking prerelease. Check with `npm dist-tag ls react-native-jwt-io` afterwards: `latest` must still be the last release.
 8. Tag `v<version>` on that `master` commit and push the tag.
+
+## Publishing account
+
+The package has two npm owners, both on maxweb4u@gmail.com: `maxweb4u` and `maximgor`; either can publish. Check them with `npm owner ls react-native-jwt-io` — `npm view react-native-jwt-io maintainers` names the account that published the last version it knows (`maximgor` for 1.0.3), not the owners, and once made `maxweb4u` look like the wrong account. 1.0.4 and `2.0.0-alpha.0` were published as `maxweb4u`.
+
+- `npm whoami` failing with E401 means the session expired: `npm login`, then publish.
+- Publishing asks for 2FA through a browser link (`npmjs.com/auth/cli/…`).
+- The registry lags: `npm view` and `npm dist-tag ls` showed a new version about a minute after `+ react-native-jwt-io@<version>` was printed (1.0.4, `2.0.0-alpha.0`). Wait before concluding that a tag did not move.
 
 ## Package contents
 

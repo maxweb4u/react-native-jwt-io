@@ -16,10 +16,11 @@ export interface ParsedToken {
 }
 
 /**
- * Splits and decodes a compact JWS without verifying it.
+ * Splits and decodes a compact JWS without verifying it. The registered
+ * claims are type-checked unless `registeredClaims` is false.
  * See memory_bank/domain/token-model.md.
  */
-export function parseToken(token: unknown): ParsedToken {
+export function parseToken(token: unknown, { registeredClaims = true } = {}): ParsedToken {
   if (typeof token !== 'string') {
     throw new JwtMalformedError('The token must be a string.');
   }
@@ -44,8 +45,16 @@ export function parseToken(token: unknown): ParsedToken {
       throw new JwtMalformedError(`The header "${name}" must be a string.`);
     }
   }
+  const crit = header.crit;
+  if (crit !== undefined && !(Array.isArray(crit) && crit.every((name) => typeof name === 'string'))) {
+    throw new JwtMalformedError('The header "crit" must be an array of strings.');
+  }
   const payload = decodeJsonSegment(payloadPart, 'payload');
-  validateRegisteredClaims(payload);
+  // Off only for the expiry helpers, which read exp alone: a token whose sub
+  // is a number (jsonwebtoken with sub: user.id) can still be refreshed in time.
+  if (registeredClaims) {
+    validateRegisteredClaims(payload);
+  }
   const signature = base64UrlDecode(signaturePart);
   if (signature === null) {
     throw new JwtMalformedError('The signature segment is not valid base64url.');
@@ -75,8 +84,11 @@ function decodeJsonSegment(segment: string, name: 'header' | 'payload'): Record<
   let value: unknown;
   try {
     value = parseJson(text);
-  } catch {
-    throw new JwtMalformedError(`The ${name} is not valid JSON.`);
+  } catch (error) {
+    // V8 throws a RangeError past its nesting limit, Hermes a SyntaxError past 512 levels.
+    throw new JwtMalformedError(
+      error instanceof RangeError ? `The ${name} is nested too deeply to parse.` : `The ${name} is not valid JSON (or is nested too deeply to parse).`,
+    );
   }
   if (!isPlainObject(value)) {
     throw new JwtMalformedError(`The ${name} must be a JSON object.`);
