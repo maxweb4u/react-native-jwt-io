@@ -145,6 +145,78 @@ The last pass over the public surface (`src/index.ts`, the option types, the err
 
 Kept as they are, each extensible in a minor release: the function names and option names (aligned with `jose` and `jsonwebtoken`), `hexToBytes` (1.x migration), `importJWK(jwk, algorithm?)` without an options argument, `now` as a `Date` only, `audience` as strings only, PEM without X.509 certificates, no key export or generation. Remote JWKS (2.1) fits the synchronous `verify`: fetching returns an ordinary `JwtKeySet`. The `types` condition comes first in `exports`, so TypeScript with `customConditions: ["react-native"]` reads the declarations, not the `.ts` sources.
 
+## Review of 2026-10-17
+
+Two independent passes (separate agents, adversarial, read-only) before `2.0.0-rc.0`: one over everything changed since `2.0.0-alpha.0`, one over the whole library. No accepted forgery with a correctly imported key; interop with Node's `crypto` 660/660 tokens both ways (RSA moduli of odd lengths included); 25,000 fuzzed JWKs and headers raised nothing but `JwtError`s. Regressions in `src/__tests__/review4.test.ts`, numbered like this table. After the fixes, `example/` read 16/16 on the Realme RMX3363 and the iOS 18.3 simulator, Release builds; blinding's cost is in [engineering/performance.md](engineering/performance.md).
+
+| # | Finding | Severity | Outcome |
+|-|-|-|-|
+| 1 | `sign` reported an option out of range (`expiresIn: 1e11 - 1000`, `now: new Date(2e14)`) as a millisecond `exp`/`iat` claim | wrong error class | `JwtOptionError` naming the option; a millisecond `iat` in the payload is named before the `exp` computed from it |
+| 2 | `requiredClaims: null` switched the check off; no test pinned `requiredClaims: 5` | fail-open (caller), test gap | an error; the string form is pinned |
+| 3 | `issuer: []`, `audience: []`, `maxTokenAge: 0` refused every token as the token's fault; `sign` issued `aud: []` | wrong error class | `JwtOptionError` |
+| 4 | `sign` checked the payload and the key before its options, hiding mistakes in them | wrong error class | options first |
+| 5 | `sign({ aud: null }, key, { audience })` blamed the option | misattribution | the payload's registered claims are checked first |
+| 6 | An unknown `algorithm` argument to `importPEM`/`importJWK` was a `JwtKeyError`, elsewhere a `JwtOptionError` | inconsistency | `JwtOptionError`, before the key is read |
+| 7 | `JwtPayload & T` let `T` contradict a registered claim (`exp: Date` compiled and failed at run time) and lost `readonly` | type | `T extends PayloadShape<T>`, `Readonly<T>`; `PayloadShape` exported |
+| 8 | Public-key dumps that tools write were accepted as HMAC secrets: .NET XML, JWK as YAML/TOML, `openssl -text`, DER as decimal bytes | medium, forgery (caller misconfiguration) | refused ([domain/keys.md](domain/keys.md#inputs)) |
+| 9 | RSA signing ran unblinded: `micro-rsa-dsa-dh` blinds only when given `e` | low, timing side channel | blinded when `getRandomValues` exists, unblinded otherwise ([domain/keys.md](domain/keys.md#rsa-blinding)) |
+| 10 | An unverified token's `alg` and `kid` reached error messages raw: a newline or ANSI escape could forge a log line | low, log injection | escaped with `describeValue` |
+| 11 | A JWK with `alg: "Ed25519"` (RFC 9864) dropped out of a key set silently | interop | listed in `skipped` with the reason; support is W-10 |
+| 12 | A future `iat` was refused with `clockTolerance` 0: a device clock two seconds behind refused every fresh token | interop | checked only with `maxTokenAge`, as in `jose` ([ADR-009](adr/ADR-009-future-iat.md)); README advises `clockTolerance` on devices |
+| 13 | The README said the library checks for `getRandomValues` when it loads; it checks at PS* signing | docs | corrected |
+| 14 | Mutants surviving in the new option code: options moved after `parseToken`, a non-list `requiredClaims` read as none, a header serialization error's class, the option named by a claim set twice, an inherited option's name | test gap | a test each in `review4.test.ts` (#13) and `apiFreeze.test.ts` |
+
+## Review of 2026-10-17, second round
+
+Two more passes the same day: one over the first round's fixes (with mutation testing and a false-refusal hunt: 150,000 realistic secrets, none refused), one from a consumer's side (the packed tarball in fresh projects: Node CJS and ESM, TypeScript 4.9–7.0 in every module resolution, webpack, Rollup, esbuild, Jest with two presets; 150 interop checks with `jose` 6.2 and `jsonwebtoken` 9.0; ten provider JWKS shapes). Regressions in `src/__tests__/review5.test.ts`, numbered like this table where they have one. After the fixes: `npm run verify` with 664 tests; `example/` 16/16 on the iOS 18.3 simulator, Release build; Android re-run after the third round, below.
+
+| # | Finding | Severity | Outcome |
+|-|-|-|-|
+| 1 | The first round's RSA blinding hung forever on a `getRandomValues` that returns its argument (a common Jest mock), and with one that throws blamed the key | DoS, regression | the source is probed before each use; RS* signs unblinded when it does not work, PS* throws `JwtHostRequirementError` |
+| 2 | `options.header` (`typ`/`cty`/`kid` types, `toJSON`, BigInt) was checked after the payload and the key | wrong error class | checked with the other options |
+| 3 | `expiresIn` under a second issued a token `verify` refuses at once | inconsistency | `JwtOptionError` |
+| 4 | Variants of the dumps refused in the first round still passed: XML with prefixes or attributes, `X509Certificate`, TOML inline tables, PyYAML lists, partial `openssl -text`, DER as numbers in Java/Go/C/Node shapes | forgery (caller misconfiguration) | refused ([domain/keys.md](domain/keys.md#inputs)) |
+| 4b | The new line patterns refused config lines that only shared a name (`n:` + any `e:`) | false refusal | values checked: short `e`, a curve name, an `n` of 1024 bits or more, an `x` of 32 bytes or more |
+| 5 | `JSON.stringify` leaves U+2028, U+2029 and C1 controls raw in messages | log injection | escaped |
+| 6 | `isExpired`/`getExpiration` refused tokens whose `sub` is a number, which `jose`, `jsonwebtoken` and jwt-decode read | interop | they check `exp` alone; `decodeUnverified` and `verify` stay strict ([domain/token-model.md](domain/token-model.md)) |
+| 7 | `importPEM` refused what OpenSSL and Node read: `openssl ecparam -genkey` output (EC PARAMETERS first), a Bag Attributes preamble, text after END | interop | read as Node does; two key blocks still refused; literal `\n` named |
+| 8 | A JWE key without `use` (`alg: "RSA-OAEP"`) was reported in `skipped`; an Entra key without `alg` was told to use `importJWK` | UX | encryption keys left out silently; the remedy names `createJWKS(jwks, { algorithm })` |
+| 9 | `verify<{ sub: string \| undefined }>` did not compile; `Jwk`'s index signature refused WebCrypto's `JsonWebKey`; options refused explicit `undefined` under `exactOptionalPropertyTypes` | types | all three accepted |
+| 10 | webpack 5 and Rollup dropped the host check with the barrel module | packaging | entry points in `sideEffects`; both bundles keep it (measured) ([engineering/gotchas.md](engineering/gotchas.md)) |
+| 11 | The README's refresh example used `clockTolerance`, which makes a token live longer — it refreshed 30 seconds *after* expiry | docs (behaviour) | a later `now`; the README test pins both directions |
+| 12 | The README's Jest pattern replaced `jest-expo`'s and broke every test in such a project | broken for some users | a line per preset, "add to it, do not replace it" |
+| 13 | "Expo Go includes react-native-get-random-values" was wrong: it is not bundled; it works through `expo-crypto` | docs | corrected; measured that Expo provides no `getRandomValues` itself |
+| 14 | An explicit `options.header.kid` was overwritten by the key's `kid` | surprise | it wins; a different `keyId` with it is an error |
+| 15 | CHANGELOG missed `options.algorithm`'s move from `JwtAlgorithmError`; the `JwtAlgorithmError` JSDoc said "alg is missing"; the migration guide did not say certificates are refused | docs | corrected |
+| 16 | 22 surviving mutants: line patterns' value checks and flags, XML case and DSA/ECDSA forms, the dump message, a non-function `getRandomValues`, the 1e11 boundaries, the order of the plausibility check, three kid messages | test gap | a test each in `review5.test.ts` (#4, #1, #10, #5) |
+
+## Review of 2026-10-17, third round
+
+Three passes the same day: one over the second round's fixes with 78 mutants; one for RFC 7515/7517/7518/7519/8037 conformance (70 probes) and Hermes 0.74 (the whole suite through `@react-native/babel-preset` 0.74.89 in both profiles, 663/664 — the one is a test that compiles a file by its repo path — and a bundle in the Hermes CLI for RN 0.74.1, output identical to Node's line for line); one with hostile input (ReDoS on 30 patterns at 256 KB, 150,000 fuzzed DER, JWK and token mutations: no exception outside the library's classes) and the public API from a consumer's side. Regressions in `src/__tests__/review6.test.ts`, numbered like this table. After the fixes: `npm run verify` with 750 tests; `example/` 16/16 on the iOS 18.3 simulator, Release build (RS256 sign 504 ms with blinding); on 2026-10-21 16/16 on the Realme RMX3363 (Android 13), Release build (RS256 sign 869 ms, PS256–512 844–856 ms).
+
+| # | Finding | Severity | Outcome |
+|-|-|-|-|
+| 1 | `sign` threw a raw `RangeError` for a payload or `options.header` nested 2,700–6,000 deep: `parseJson`'s reviver recursed past the stack `JSON.stringify` had room for. `verify` called a too-deep payload "not valid JSON" | wrong error class | `parseJson` walks the result iteratively; the echo is wrapped; "nested too deeply" |
+| 2 | A `toJSON` throwing `null` made `sign` throw a `TypeError` reading `.message` | wrong error class | described with `describeValue` |
+| 3 | `verify`, `isExpired`, `getExpiration` read a millisecond `exp` as seconds: a token that expired an hour ago never expired, though `sign` refuses such a time | security (issuer bug) | refused above 1e11 in reading too (OD-9, [domain/validation.md](domain/validation.md)) |
+| 4 | Claim-mismatch messages (`iss`, `aud`, `sub`, `typ`) printed token values raw and whole (20,000 characters, U+2028) | log injection | `describeValue`: escaped, 64 characters |
+| 5 | A public PEM in UTF-16BE (PowerShell `-Encoding BigEndianUnicode`) was not recognised as a key passed for a secret | forgery (caller misconfiguration) | both byte orders |
+| 6 | `JwtHeader.crit` was typed `string[]`, but `decodeUnverified` returned `crit: 5` | types | checked in `parseToken` |
+| 7 | `createJWKS` checked the set before its options, unlike ADR-008 | consistency | options first |
+| 8 | `verify` read `options.algorithm` four times, `issuer` and the others twice | robustness | each read once |
+| 9 | `{ ...payload }` in `sign` is `Object.assign` under the RN preset's loose object spread: an own `__proto__` key became the copy's prototype, and `iat`/`iss` were inherited from it | host difference | own keys copied one by one, `__proto__` dropped ([engineering/gotchas.md](engineering/gotchas.md)) |
+| 10 | `key_ops` only filtered encryption keys: a JWK with `["verify"]` signed, `use: "sig"` with `encrypt` was accepted | RFC 7517 §4.3 | per operation (OD-9, [domain/keys.md](domain/keys.md)) |
+| 11 | `numericBytes`' trailing-bracket regex was quadratic on a run of whitespace: a 64 KB secret took 7 s per `sign` | DoS | tokenized by hand; every new pattern timed |
+| 12 | The random-source probe used the array it passed, not the one returned: a polyfill that returns nothing made RS256 fail blaming the key. A source whose numbers never fall below the modulus, or that fills only one array, still hung blinding. Throwing getters escaped as raw errors | DoS, wrong error class | the probe draws modulus-sized numbers as `micro-rsa-dsa-dh` does, at least twice, from the returned arrays; getters inside the try ([domain/keys.md](domain/keys.md#rsa-blinding)) |
+| 13 | Without the index signature, a JWK literal with `x5c`, `x5t`, `ext` or `oth` did not compile | types, regression | the registered members typed |
+| 14 | Bidirectional and invisible format characters (U+202E, U+2066…) were left raw in messages | log spoofing | escaped |
+| 15 | `importPEM`: a broken first block was skipped and the next one imported; spaces after BEGIN refused; an EC PARAMETERS-only file called "not a PEM block"; the literal `\n` hint lost to a trailing newline | interop | as OpenSSL |
+| 16 | Dumps still passing as secrets: `xxd -i`, Go `%#v`, Java `new byte[]`, Python `b'…'` and `bytes([…])`, PowerShell, Rust `u8`, `hexdump -C`, `xxd`, INI in capitals | forgery (caller misconfiguration) | refused ([domain/keys.md](domain/keys.md#inputs)) |
+| 17 | Surviving mutants: JWE algorithm variants, the HS256 hint for an `oct` key, DEL/C1 boundaries, the probe's returned value, false-positive line values | test gap | a test each in `review6.test.ts` (#17, #14, #12, #16) |
+| 18 | Hermes 0.74 cannot parse `class`; the library runs because the RN preset always lowers classes | docs | [engineering/gotchas.md](engineering/gotchas.md) |
+
+Not changed: Node `util.inspect` of a `Buffer` or `Uint8Array` shows the first 50 or 100 bytes only, so a key printed so cannot be told from a list of numbers; YAML tags and folded scalars, `<PublicKey>` XML and XML entities stay undetected; a certificate and a key in one PEM stays an error (which one was meant would be a guess); a random source that works for the probe and fails after it is beyond the probe.
+
 ## Decided
 
 | ID | Decision | Outcome | Record |
@@ -156,6 +228,8 @@ Kept as they are, each extensible in a minor release: the function names and opt
 | OD-5 | Minimum React Native version | No `react-native` peer; the floor is the lowest React Native whose Hermes has every feature the code needs (`BigInt`, `Object.hasOwn`, `TextEncoder`), measured — 0.74; runtime host check with `JwtHostRequirementError`; Hermes only. Accepted 2026-10-15, floor corrected 2026-10-16 | [ADR-007](adr/ADR-007-host-requirements-text-encoder.md), superseding ADR-005 |
 | OD-6 | Ship 1.0.4 first | Yes: `jsrsasign` ^11.1.5, a `files` field so the memory bank is not published, `CHANGELOG.md`, a README note on 2.0.0 and the 1.0.x window. Accepted and published 2026-10-15 | [product/roadmap.md](product/roadmap.md) |
 | OD-7 | Option errors and payload generics | A mistake in the call is `JwtOptionError`, checked before the token is read; switches must be booleans; `payload: JwtPayload & T`. Accepted 2026-10-16, after `2.0.0-alpha.0` | [ADR-008](adr/ADR-008-option-errors.md) |
+| OD-8 | Future `iat`, RSA blinding, `alg: "Ed25519"`, payload type constraint | Future `iat` only with `maxTokenAge`; RSA blinding when a random source exists; `Ed25519` reported in `skipped`, supported in 2.1; `T extends PayloadShape<T>`. Accepted 2026-10-17 | [ADR-009](adr/ADR-009-future-iat.md), [domain/keys.md](domain/keys.md#rsa-blinding) |
+| OD-9 | Millisecond times in tokens, `key_ops` | A time claim above 1e11 is refused wherever a token is read, as in signing — stricter than `jose`; `key_ops` allows only the operations it lists, like WebCrypto's usages. Accepted 2026-10-17, third review round | [domain/validation.md](domain/validation.md), [domain/keys.md](domain/keys.md) |
 
 ## Defects in the 1.0.x line
 
