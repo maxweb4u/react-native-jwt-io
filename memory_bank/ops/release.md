@@ -35,7 +35,7 @@ The end date is written into the README with the 2.0.0 release. Decided in [ADR-
 
 ## Checklist
 
-1. `npm run verify` passes.
+1. `npm run verify` passes, and `npm audit --omit=dev` reports 0 vulnerabilities: that is what an app installs. Advisories in the development tools are tracked in the backlog, not blockers.
 2. `example/` runs in a Release build on a physical device or simulator on both platforms, and its self-test screen reads 16/16.
 3. `npm pack --dry-run` lists only `lib/`, `src/`, `README.md`, `LICENSE`, `CHANGELOG.md`, `package.json`.
 4. `CHANGELOG.md` has an entry; for 2.0.0 the README carries the migration guide and the 1.0.x end-of-support date. While a prerelease is out, the README installs `react-native-jwt-io@next`, because `latest` is still 1.x; the release that moves `latest` to 2.x drops the `@next` and the note under it.
